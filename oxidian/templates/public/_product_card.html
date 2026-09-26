@@ -1,14 +1,19 @@
-{# ── Tarjeta editorial de producto ── #}
+{# ═══════════════════════════════════════════════════════════════════
+   Tarjeta de producto — 2026-09-26 (rediseño moderno)
+   Estilo: Glovo / Uber Eats / DoorDash — image-first, mobile-first.
+   · Imagen 4:3 dominante con badges overlay + botón `+` circular
+     flotante en la esquina inferior derecha (Glovo style).
+   · Body compacto: kicker fino, nombre 1rem, descripción line-clamp 2.
+   · Footer: precio dominante + botón contextual (Añadir/Armar/Ver).
+   · Todas las clases `ep-card*` + `data-*` preservadas → JS existente
+     sigue enganchando sin cambios.
+   Variable esperada: p (Product)
+   ═══════════════════════════════════════════════════════════════════ #}
 {% from 'partials/heritage_icons.html' import heritage_icon, loyalty_icon %}
-{# Variable esperada: p (Product) #}
 {% set _product_origin = product_origins.get(p.id, origen_actual) if product_origins is defined else origen_actual %}
-{# Suma cantidades en canasta para este producto: hay que agregar la clave
-   legacy `"123"` Y todas las firmas de línea `"123#..."` (productos con
-   presentación, sabores, extras o selección de combo). Compara por origen
-   LOGÍSTICO — `carrito_origen` viene resuelto en logístico (socio-capital
-   despacha como "propio"), así que el producto también debe reducirse a su
-   origen logístico o los productos de socios-capital nunca coincidirían. #}
 {% set _product_origin_logistico = product_logistic_origins.get(p.id, _product_origin) if product_logistic_origins is defined else _product_origin %}
+{# Suma cantidades del producto en carrito (líneas legacy `"id"` +
+   firmas con presentación/sabor/extras `"id#..."`). #}
 {% set _qty_ns = namespace(v=0) %}
 {% if carrito is defined and carrito_origen == _product_origin_logistico %}
   {% set _pid_str = p.id|string %}
@@ -23,29 +28,25 @@
 {% set _card = product_cards[p.id] %}
 {% set _has_extras = _card.has_extras %}
 {% set _tallas = _card.presentations %}
-{% set _vertical = (p.vertical or 'ambos') %}
-{# data-group ayuda al filtro client-side a saber a qué "bloque" pertenece:
-   canje (granito), combos o regular. Ver epFilterCategory en index.html. #}
 {% set _es_canje = (p.solo_canje or (p.puntos_para_canje and p.puntos_para_canje > 0)) %}
 {% set _card_group = 'canje' if _es_canje else ('combos' if p.es_combo else 'regular') %}
-{% set _image_fit = p.get_atributos().get('image_fit', 'contain') %}
-<div class="ep-card motion-fade-in {{ 'ep-card-image-cover' if _image_fit == 'cover' else 'ep-card-image-contain' }} {% if p.es_combo %}ep-card-combo{% endif %} {% if _qty_cart > 0 %}ep-card-in-cart{% endif %}"
-     data-product-card="{{ p.id }}"
-     data-category-id="{{ p.categoria_id or '' }}"
-     data-card-group="{{ _card_group }}"
-     style="view-transition-name: producto-{{ p.id }}">
+{% set _image_fit = p.get_atributos().get('image_fit', 'cover') %}
+{# Fallback emoji multi-tienda: cat.emoji → 🎁 combo → brand.fallback → 🍽️/🛍️ #}
+{%- set _card_emoji = (p.categoria.emoji if p.categoria and p.categoria.emoji else ('🎁' if p.es_combo else (brand.fallback_emoji or brand.vertical_emoji or ('🍽️' if brand.es_comida else '🛍️')))) -%}
+{% set _can_quick_add = establecimiento.abierto and p.tipo_entrega == 'inmediato' and not p.es_combo and not _has_extras and _card.available and not p.solo_canje %}
+{% set _is_detail_action = (p.tipo_entrega in ('encargo','programado')) or p.es_combo or _has_extras %}
 
-  {# ── Imagen ── #}
+<article class="ep-card motion-fade-in {{ 'ep-card-image-cover' if _image_fit == 'cover' else 'ep-card-image-contain' }} {% if p.es_combo %}ep-card-combo{% endif %} {% if _qty_cart > 0 %}ep-card-in-cart{% endif %}"
+         data-product-card="{{ p.id }}"
+         data-category-id="{{ p.categoria_id or '' }}"
+         data-card-group="{{ _card_group }}"
+         style="view-transition-name: producto-{{ p.id }}">
+
+  {# ── HERO IMAGEN con badges overlay + botón + circular ── #}
   <a class="ep-card-img"
      href="{{ url_for('public.producto_detalle', producto_id=p.id, origen=_product_origin) }}"
-     {% if establecimiento.abierto and p.tipo_entrega == 'inmediato' and not p.es_combo and not _has_extras and _card.available %}data-modal-open="{{ p.id }}"{% endif %}
-     tabindex="-1" aria-hidden="true">
-    {# Cadena de fallback del icono (genérica multi-tienda):
-       1. `p.categoria.emoji` configurado desde el admin (por categoría).
-       2. `🎁` para combos (mantiene contexto sin depender del nicho).
-       3. `brand.vertical_emoji` / `brand.fallback_emoji` (comida vs retail).
-    #}
-    {%- set _card_emoji = (p.categoria.emoji if p.categoria and p.categoria.emoji else ('🎁' if p.es_combo else (brand.fallback_emoji or brand.vertical_emoji or ('🍽️' if brand.es_comida else '🛍️')))) -%}
+     {% if _can_quick_add %}data-modal-open="{{ p.id }}"{% endif %}
+     aria-label="Ver {{ p.nombre }}">
     {% if p.imagen_url %}
       {% set _src = p.imagen_url|upload_url %}
       <img src="{{ _src }}" alt="{{ p.nombre }}" loading="lazy" decoding="async"
@@ -55,29 +56,16 @@
       <div class="ep-card-img-emoji">{{ _card_emoji }}</div>
     {% endif %}
 
-    {# Badges sobre imagen #}
+    {# Badges overlay TOP-LEFT — información contextual crítica #}
     <div class="ep-card-badges">
       {% set fb = fulfillment_badge(p) %}
       <span class="ep-cbadge ep-cbadge-fulfillment" title="{{ fb.title }}">
         <span aria-hidden="true">{{ fb.emoji }}</span>
         <span class="ep-cbadge-label">{{ fb.label }}</span>
       </span>
-      {% if p.grupo_pedido %}<span class="ep-cbadge ep-cbadge-encargo">Pedido: {{ p.grupo_pedido }}</span>{% endif %}
       {% if p.es_combo %}<span class="ep-cbadge ep-cbadge-combo">🎁 COMBO</span>{% endif %}
-      {% if p.proveedor_despachador %}
-      <span class="ep-cbadge ep-cbadge-partner" title="Producto respaldado por un socio comercial verificado">
-        🤝 Socio verificado
-      </span>
-      {% endif %}
       {% if p.tipo_entrega in ('programado','encargo') %}
       <span class="ep-cbadge ep-cbadge-encargo">📆 Fecha fija{% if p.fecha_llegada %}: {{ p.fecha_llegada.strftime('%d/%m') }}{% endif %}</span>
-      {% endif %}
-      {# Badge de lote: "🍽 4 u. por tanda" — hace visible al cliente que
-         cada unidad del carrito reserva una tanda (no una unidad suelta). #}
-      {% if p.cantidad_por_lote and p.cantidad_por_lote > 0 %}
-      <span class="ep-cbadge ep-cbadge-encargo" style="background:color-mix(in srgb,var(--brand-primary) 22%,transparent)">
-        🍽 {{ p.cantidad_por_lote }} u. por tanda
-      </span>
       {% endif %}
       {% if p.solo_canje %}
         <span class="ep-cbadge ep-cbadge-puntos ep-cbadge-puntos--exclusive">{{ heritage_icon('canasto') }} SOLO CANJE</span>
@@ -88,26 +76,41 @@
       {% if p.stock_mostrar_en_web and stock_origen <= 5 and stock_origen > 0 %}
       <span class="ep-cbadge ep-cbadge-urgente">⚡ Quedan {{ stock_origen }}</span>
       {% endif %}
+      {% if p.proveedor_despachador %}
+      <span class="ep-cbadge ep-cbadge-partner" title="Producto respaldado por un socio comercial verificado">
+        🤝 Socio
+      </span>
+      {% endif %}
+      {% if p.grupo_pedido %}<span class="ep-cbadge ep-cbadge-encargo">📦 {{ p.grupo_pedido }}</span>{% endif %}
+      {% if p.cantidad_por_lote and p.cantidad_por_lote > 0 %}
+      <span class="ep-cbadge ep-cbadge-encargo" style="background:color-mix(in srgb,var(--brand-primary) 22%,transparent)">
+        🍽 {{ p.cantidad_por_lote }}u/tanda
+      </span>
+      {% endif %}
     </div>
-    {% if _qty_cart > 0 %}
-    <span class="ep-card-cart-qty">{{ _qty_cart }}</span>
-    {% endif %}
 
+    {# Badge de cantidad en carrito (TOP-RIGHT) — bien visible #}
+    {% if _qty_cart > 0 %}
+    <span class="ep-card-cart-qty" aria-label="{{ _qty_cart }} en tu canasta">{{ _qty_cart }}</span>
+    {% endif %}
   </a>
 
-  {# ── Cuerpo ── #}
+  {# ── BODY compacto con jerarquía clara ── #}
   <div class="ep-card-body">
     <div class="ep-card-kicker-row">
       <span class="ep-card-kicker">
         {% if p.es_combo %}Combo
-        {% elif p.tipo_entrega in ('programado','encargo') %}Entrega con fecha fija
+        {% elif p.tipo_entrega in ('programado','encargo') %}Fecha fija
         {% elif p.categoria %}{{ p.categoria.nombre }}
         {% else %}Disponible{% endif %}
       </span>
-      {% if p.stock_mostrar_en_web and p.tipo_entrega == 'inmediato' and not _card.stock|stock_is_unlimited %}
+      {% if _card.rating %}
+      <span class="ep-card-highlight ep-card-rating" title="Valoración media">★ {{ "%.1f"|format(_card.rating) }}</span>
+      {% elif p.stock_mostrar_en_web and p.tipo_entrega == 'inmediato' and not _card.stock|stock_is_unlimited %}
       <span class="ep-card-stock-mini">{{ _card.stock }} disp.</span>
       {% endif %}
     </div>
+
     <a class="ep-card-title-link"
        href="{{ url_for('public.producto_detalle', producto_id=p.id, origen=_product_origin) }}">
       <p class="ep-card-name">{{ p.nombre }}</p>
@@ -117,63 +120,73 @@
     <p class="ep-card-desc">{{ p.descripcion }}</p>
     {% endif %}
 
-    {# Combo preview: muestra dependencias reales del combo antes de entrar al detalle #}
+    {# Combo preview limpio (solo cuando es combo con contenido) #}
     {% if p.es_combo %}
-    {% set preview = _card.combo_items %}
-    {% if preview %}
-    {% set fijos_p = preview|selectattr('es_seleccionable','equalto',False)|list %}
-    {% set sels_p  = preview|selectattr('es_seleccionable')|list %}
-    {% set gs = sels_p|map(attribute='grupo_display')|unique|list %}
-    <div class="ep-card-combo-panel">
-      {% if fijos_p %}
-      <div class="ep-card-combo-line">
-        <span class="ep-card-combo-label">Ya incluido</span>
-        <ul class="combo-included-list">
-          {% for ci in fijos_p[:3] %}<li><strong>{{ ci.cantidad }}×</strong> {{ ci.componente.nombre }}</li>{% endfor %}
-          {% if fijos_p|length > 3 %}<li>Y {{ fijos_p|length - 3 }} producto{{ 's' if fijos_p|length - 3 != 1 else '' }} más</li>{% endif %}
-        </ul>
+      {% set preview = _card.combo_items %}
+      {% if preview %}
+        {% set fijos_p = preview|selectattr('es_seleccionable','equalto',False)|list %}
+        {% set sels_p  = preview|selectattr('es_seleccionable')|list %}
+        {% set gs = sels_p|map(attribute='grupo_display')|unique|list %}
+        <div class="ep-card-combo-panel">
+          {% if fijos_p %}
+          <div class="ep-card-combo-line">
+            <span class="ep-card-combo-label">Incluido</span>
+            <ul class="combo-included-list">
+              {% for ci in fijos_p[:3] %}<li><strong>{{ ci.cantidad }}×</strong> {{ ci.componente.nombre }}</li>{% endfor %}
+              {% if fijos_p|length > 3 %}<li>+ {{ fijos_p|length - 3 }} más</li>{% endif %}
+            </ul>
+          </div>
+          {% endif %}
+          {% if sels_p %}
+          <div class="ep-card-combo-line">
+            <span class="ep-card-combo-label">A tu gusto</span>
+            <span class="ep-card-combo-copy">{{ gs|join(' · ') }}</span>
+          </div>
+          {% endif %}
+        </div>
+      {% else %}
+      <div class="ep-card-combo-panel ep-card-combo-panel-warn">
+        <span class="ep-card-combo-copy">Combo pendiente de configurar por el admin.</span>
       </div>
       {% endif %}
-      {% if sels_p %}
-      <div class="ep-card-combo-line">
-        <span class="ep-card-combo-label">A tu gusto</span>
-        <span class="ep-card-combo-copy">{{ gs|join(' · ') }}</span>
-      </div>
-      <p class="combo-choice-hint">{{ gs|length }} sección{{ 'es' if gs|length != 1 else '' }} para elegir al abrir el combo</p>
-      {% else %}<p class="combo-choice-hint">Revisa el contenido y añádelo a tu pedido</p>{% endif %}
-    </div>
-    {% else %}
-    <div class="ep-card-combo-panel ep-card-combo-panel-warn">
-      <span class="ep-card-combo-copy">Combo pendiente de configurar por el admin.</span>
-    </div>
-    {% endif %}
     {% endif %}
 
-    {# Atributos decisivos agrupados: ayudan a elegir sin competir con la foto. #}
-    {% if _card.has_flavors or _card.rating or (brand.es_comida is not defined or brand.es_comida) %}
-    <div class="ep-card-highlights" aria-label="Características del producto">
+    {# Highlights: sabores + alérgenos (solo comida) — línea horizontal compacta #}
+    {% set _show_hl = _card.has_flavors or (brand.es_comida is not defined or brand.es_comida) %}
+    {% if _show_hl %}
+    <div class="ep-card-highlights" aria-label="Características">
       {% if _card.has_flavors %}
       <span class="ep-card-highlight ep-card-highlight-flavor">🥭 {% if _card.flavor_catalog_max_selecciones > 1 %}Combina sabores{% else %}{{ 'Elige sabor' if _card.flavors_required else 'Con sabores' }}{% endif %}</span>
       {% endif %}
       {% if brand.es_comida is not defined or brand.es_comida %}
-      {% if p.es_hipoalergenico %}
-      <span class="ep-card-highlight ep-card-hipo">🌿 Sin alérgenos</span>
-      {% else %}
-      {% set al = p.alergenos_iconos %}
-      {% if al %}<span class="ep-card-highlight ep-card-alerg">⚠️ {% for c,i,l in al[:4] %}<span title="{{ l }}">{{ i }}</span>{% endfor %}{% if al|length > 4 %} +{{ al|length - 4 }}{% endif %}</span>{% endif %}
-      {% endif %}
-      {% endif %}
-      {% if _card.rating %}
-      <span class="ep-card-highlight ep-card-rating">★ {{ "%.1f"|format(_card.rating) }}</span>
+        {% if p.es_hipoalergenico %}
+        <span class="ep-card-highlight ep-card-hipo">🌿 Sin alérgenos</span>
+        {% else %}
+          {% set al = p.alergenos_iconos %}
+          {% if al %}
+          <span class="ep-card-highlight ep-card-alerg" title="Contiene alérgenos">
+            ⚠️ {% for c,i,l in al[:4] %}<span title="{{ l }}">{{ i }}</span>{% endfor %}{% if al|length > 4 %} +{{ al|length - 4 }}{% endif %}
+          </span>
+          {% endif %}
+        {% endif %}
       {% endif %}
     </div>
     {% endif %}
 
-    {# Footer: precio + acción #}
+    {# Chips de tallas/tamaños — cuando hay presentaciones #}
+    {% if _tallas|length > 0 %}
+    <div class="ep-card-sizes" aria-label="Tallas / tamaños disponibles">
+      {% for t in _tallas[:6] %}
+      <span class="ep-card-size-chip">{{ t.label }}</span>
+      {% endfor %}
+      {% if _tallas|length > 6 %}<span class="ep-card-size-more">+{{ _tallas|length - 6 }}</span>{% endif %}
+    </div>
+    {% endif %}
+
+    {# FOOTER: precio dominante + botón contextual #}
     <div class="ep-card-footer">
       <div class="ep-card-prices">
         {% if p.solo_canje %}
-          {# Exclusivo canje: NO tiene precio en euros, solo puntos. #}
           <span class="ep-card-price ep-card-price--points">
             {{ loyalty_icon() }} {{ p.puntos_para_canje or 0 }} {{ ui.loyalty_unit_plural }}
           </span>
@@ -189,7 +202,7 @@
           {% elif p.es_combo and p.combo_precio_modo_normalizado == 'descuento_porcentaje' and p.combo_descuento_pct_float > 0 %}
           <span class="ep-card-price-note">{{ "%.0f"|format(p.combo_descuento_pct_float) }}% dto</span>
           {% elif p.es_combo %}
-          <span class="ep-card-price-note">Precio fijo</span>
+          <span class="ep-card-price-note">Precio combo</span>
           {% endif %}
         {% endif %}
         {% if _qty_cart > 0 %}
@@ -199,38 +212,27 @@
         {% endif %}
       </div>
 
-      {# Chips de tallas (retail) o tamaños (comida) — solo si hay presentaciones #}
-      {% if _tallas|length > 0 %}
-      <div class="ep-card-sizes" aria-label="Tallas disponibles">
-        {% for t in _tallas[:6] %}
-        <span class="ep-card-size-chip">{{ t.label }}</span>
-        {% endfor %}
-        {% if _tallas|length > 6 %}<span class="ep-card-size-more">+{{ _tallas|length - 6 }}</span>{% endif %}
-      </div>
-      {% endif %}
-
+      {# Botón contextual — SIEMPRE el mismo hueco a la derecha para consistencia #}
       {% if not establecimiento.abierto %}
         <span class="ep-btn-sold">Cerrado</span>
       {% elif p.solo_canje %}
-        {# Producto exclusivo de canje: no se vende con dinero, solo se
-           canjea con puntos desde el carrito al hacer un pedido. #}
         <a href="{{ url_for('public.ver_carrito') }}" class="ep-btn-detail"
            title="Solo se canjea con {{ ui.loyalty_unit_plural }} al hacer un pedido">
           {{ ui.cart_view_action }} →
         </a>
       {% elif not _card.available %}
         <span class="ep-btn-sold">Agotado</span>
-      {% elif p.tipo_entrega in ('encargo','programado') or p.es_combo or _has_extras %}
+      {% elif _is_detail_action %}
         <a href="{{ url_for('public.producto_detalle', producto_id=p.id, origen=_product_origin) }}" class="ep-btn-detail">
           {% if p.es_combo %}Armar combo{% elif _has_extras %}Personalizar{% else %}Ver fecha{% endif %}
         </a>
       {% else %}
         <button type="button" class="ep-btn-add" aria-label="{{ 'Añadir otra unidad de ' if _qty_cart > 0 else 'Añadir ' }}{{ p.nombre }}"
                 data-modal-open="{{ p.id }}" data-product-name="{{ p.nombre }}">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           <span class="ep-btn-add-label">{{ ui.product_add_short }}</span>
         </button>
       {% endif %}
     </div>
   </div>
-</div>
+</article>

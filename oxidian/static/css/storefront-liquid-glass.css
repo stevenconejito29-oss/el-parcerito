@@ -118,6 +118,135 @@ body.ox-body-public .ep-card-img-emoji {
     color-mix(in srgb, var(--brand-primary) 4%, var(--theme-surface)));
 }
 
+/* article como card (era div) — asegura block display en navegadores viejos */
+body.ox-body-public article.ep-card {
+  display: block;
+}
+
+/* Badges overlay top-left en la imagen — pill glass sobre foto */
+body.ox-body-public .ep-card-badges {
+  position: absolute;
+  top: 10px; left: 10px;
+  right: 60px; /* deja hueco al cart-qty top-right */
+  display: flex; flex-wrap: wrap;
+  gap: 4px;
+  z-index: 2;
+  pointer-events: none;
+}
+body.ox-body-public .ep-card-badges .ep-cbadge {
+  pointer-events: auto;
+  max-width: 100%;
+}
+
+/* Badge cantidad en carrito top-right — círculo brand llamativo */
+body.ox-body-public .ep-card-cart-qty {
+  position: absolute;
+  top: 10px; right: 10px;
+  min-width: 32px; min-height: 32px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: linear-gradient(135deg,
+    var(--brand-primary),
+    color-mix(in srgb, var(--brand-primary) 78%, #000)) !important;
+  color: var(--brand-on-primary, #1B0A00) !important;
+  font-weight: 950;
+  font-size: 0.9rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-shadow:
+    0 4px 12px color-mix(in srgb, var(--brand-primary) 42%, transparent),
+    0 0 0 2px var(--theme-surface, #fff);
+  z-index: 3;
+}
+
+/* Botón + circular flotante estilo Glovo — dentro del footer pero
+   compacto para que compita bien con el precio. Ya existe .ep-btn-add
+   circular 46px definido antes: aquí solo ajustes finales. */
+body.ox-body-public .ep-btn-add {
+  width: 48px !important; height: 48px !important;
+  min-width: 48px !important; min-height: 48px !important;
+  border-radius: 999px !important;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important; justify-content: center !important;
+  background: linear-gradient(135deg,
+    var(--brand-primary),
+    color-mix(in srgb, var(--brand-primary) 78%, #000)) !important;
+  color: var(--brand-on-primary, #fff) !important;
+  border: none !important;
+  box-shadow:
+    0 6px 16px color-mix(in srgb, var(--brand-primary) 38%, transparent),
+    0 0 0 3px var(--theme-surface, #fff) !important;
+  transition: transform .16s, filter .14s, box-shadow .14s !important;
+  cursor: pointer;
+}
+body.ox-body-public .ep-btn-add:hover:not(:disabled) {
+  filter: brightness(1.1);
+  transform: translateY(-1px) scale(1.03);
+  box-shadow:
+    0 8px 20px color-mix(in srgb, var(--brand-primary) 48%, transparent),
+    0 0 0 3px var(--theme-surface, #fff) !important;
+}
+body.ox-body-public .ep-btn-add:active { transform: scale(.92); }
+body.ox-body-public .ep-btn-add-label {
+  /* Solo lector de pantalla — el icono `+` ya comunica visualmente */
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* Botón detail (Armar combo, Personalizar, Ver fecha) — pill outlined */
+body.ox-body-public .ep-btn-detail {
+  min-height: 44px !important;
+  padding: 0 16px !important;
+  border-radius: 999px !important;
+  background: color-mix(in srgb, var(--brand-primary) 12%, var(--theme-surface)) !important;
+  border: 1.5px solid color-mix(in srgb, var(--brand-primary) 55%, transparent) !important;
+  color: var(--brand-primary) !important;
+  font-weight: 900 !important;
+  font-size: 0.85rem !important;
+  display: inline-flex !important;
+  align-items: center !important; justify-content: center !important;
+  transition: background .16s, transform .1s, box-shadow .14s !important;
+  text-decoration: none !important;
+}
+body.ox-body-public .ep-btn-detail:hover {
+  background: color-mix(in srgb, var(--brand-primary) 22%, var(--theme-surface)) !important;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--brand-primary) 22%, transparent) !important;
+}
+body.ox-body-public .ep-btn-detail:active { transform: scale(.96); }
+
+/* Estado "cerrado / agotado" — chip claramente inactivo */
+body.ox-body-public .ep-btn-sold {
+  min-height: 44px !important;
+  padding: 0 16px !important;
+  border-radius: 999px !important;
+  background: color-mix(in srgb, var(--theme-text) 8%, transparent) !important;
+  color: color-mix(in srgb, var(--theme-text) 55%, transparent) !important;
+  font-weight: 800 !important;
+  font-size: 0.82rem !important;
+  display: inline-flex !important;
+  align-items: center !important; justify-content: center !important;
+}
+
+/* En carrito: acento sutil brand alrededor de la card completa */
+body.ox-body-public .ep-card.ep-card-in-cart {
+  border-color: color-mix(in srgb, var(--brand-primary) 55%, transparent) !important;
+  box-shadow:
+    0 4px 14px color-mix(in srgb, var(--brand-primary) 20%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--brand-primary) 15%, transparent) !important;
+}
+
+/* "✓ En tu canasta" — línea sutil color success */
+body.ox-body-public .ep-card-cart-state {
+  display: inline-flex;
+  font-size: 0.7rem !important;
+  font-weight: 850 !important;
+  color: var(--theme-success, #22c55e) !important;
+  margin-top: 2px;
+}
+
 /* Cuerpo de la tarjeta — más padding, mejor jerarquía */
 body.ox-body-public .ep-card-body {
   padding: 12px 14px 14px !important;
