@@ -1167,6 +1167,169 @@ body.ox-body-public .ep-modal-stock {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   11.9. RESPONSIVE FUERTE + FUENTES CONSISTENTES — 2026-09-27
+
+   Objetivo: PWA usable en pantallas MUY pequeñas (280-360px, Galaxy A03,
+   iPhone SE 1st gen) y MUY grandes (768+ tablet, iPad, foldables).
+   Sin fuentes disparejas. Sin textos "corridos" (sin wrap).
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Fuente unificada en todo el storefront público (nunca hereda de otros
+   componentes con font-family propio). Base Inter (definida en
+   oxidian.css:104), con fallback system-ui. */
+body.ox-body-public,
+body.ox-body-public :is(h1, h2, h3, h4, h5, h6, p, span, div, a, button, input, textarea, select, label, li, dt, dd) {
+  font-family: 'Inter', -apple-system, 'SF Pro Display', system-ui, 'Segoe UI',
+               Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Escalado FLUIDO con clamp — se adapta 320px → 1024px sin breakpoints
+   discretos. Cada elemento usa clamp(mínimo móvil, preferido, máximo). */
+body.ox-body-public .pd-title,
+body.ox-body-public .pd-hero-title,
+body.ox-body-public .pd-name {
+  font-size: clamp(1.3rem, 1.0rem + 1.6vw, 1.9rem) !important;
+  line-height: 1.15 !important;
+  letter-spacing: -.015em !important;
+  font-weight: 900 !important;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+body.ox-body-public .pd-desc,
+body.ox-body-public .pd-descripcion {
+  font-size: clamp(.85rem, .78rem + .35vw, 1rem) !important;
+  line-height: 1.55 !important;
+  overflow-wrap: anywhere;
+}
+body.ox-body-public .pd-price {
+  font-size: clamp(1.5rem, 1.2rem + 2vw, 2.1rem) !important;
+  line-height: 1 !important;
+  font-weight: 950 !important;
+  letter-spacing: -.02em;
+}
+body.ox-body-public .pd-cstep-ttl {
+  font-size: clamp(.95rem, .85rem + .5vw, 1.15rem) !important;
+}
+body.ox-body-public .pd-cstep-sub {
+  font-size: clamp(.75rem, .68rem + .3vw, .9rem) !important;
+}
+
+/* Combo body — sub-elementos con wrap fuerte para que nombres largos
+   como "Empanada de carne con hogao artesano" nunca desborden. */
+body.ox-body-public :is(.pd-combo-item, .pd-combo-unit-row, .pd-combo-opcion) *:not(input):not(button):not(svg):not(img) {
+  overflow-wrap: anywhere !important;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+/* Grid fluido del combo — pantallas pequeñas 1 col, tablet 2 cols */
+body.ox-body-public .pd-cstep-body {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 640px) {
+  body.ox-body-public .pd-cstep-body {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+}
+@media (min-width: 900px) {
+  body.ox-body-public .pd-cstep-body {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Card producto en tablet+ — grid con más columnas */
+@media (min-width: 900px) {
+  body.ox-body-public .ep-grid,
+  body.ox-body-public [class*="ep-cat-grid"] {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+    gap: 18px;
+  }
+}
+@media (min-width: 1200px) {
+  body.ox-body-public .ep-grid,
+  body.ox-body-public [class*="ep-cat-grid"] {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+    gap: 20px;
+  }
+}
+
+/* ══ PANTALLAS MUY PEQUEÑAS (280-320px: iPhone 5s/SE 1st, Galaxy A03) ══ */
+@media (max-width: 320px) {
+  body.ox-body-public .ep-card-body { padding: 8px 10px 10px !important; }
+  body.ox-body-public .ep-card-name { font-size: .9rem !important; }
+  body.ox-body-public .ep-card-desc { font-size: .72rem !important; -webkit-line-clamp: 1 !important; }
+  body.ox-body-public .ep-card-price { font-size: 1rem !important; }
+  body.ox-body-public .ep-card-badges { right: 42px !important; top: 6px; left: 6px; gap: 2px !important; }
+  body.ox-body-public .ep-cbadge { font-size: .55rem !important; padding: 2px 5px !important; }
+  body.ox-body-public .ep-card-cart-qty { min-width: 24px !important; min-height: 24px !important; font-size: .75rem !important; top: 6px !important; right: 6px !important; }
+  body.ox-body-public .ep-btn-add { width: 42px !important; height: 42px !important; min-width: 42px !important; min-height: 42px !important; }
+  body.ox-body-public .ep-btn-detail { font-size: .72rem !important; padding: 0 10px !important; min-height: 40px !important; }
+  /* Ficha producto */
+  body.ox-body-public .pd-card { padding: .7rem .6rem 1rem !important; border-radius: var(--lg-radius-md) !important; }
+  body.ox-body-public .pd-cstep { padding: .7rem !important; }
+  body.ox-body-public .pd-cstep-num { width: 30px !important; height: 30px !important; min-width: 30px !important; font-size: .85rem !important; }
+  body.ox-body-public .pd-combo-thumb { width: 48px !important; height: 48px !important; min-width: 48px !important; }
+  body.ox-body-public .pd-flavor-chip { padding: .45rem .6rem !important; min-height: 44px !important; font-size: .75rem !important; }
+  body.ox-body-public .pd-combo-qty-control { width: 40px !important; min-width: 40px !important; height: 40px !important; }
+  body.ox-body-public .pd-extra-stepper__btn { min-width: 38px !important; font-size: 1.1rem !important; }
+  /* Barra sticky compra */
+  body.ox-body-public .pd-add-btn { font-size: .82rem !important; padding: 0 .5rem !important; }
+  body.ox-body-public .pd-qty-btn { min-width: 34px !important; }
+}
+
+/* ══ TABLET (768+): aprovechar el ancho, más padding, layout 2 columnas ══ */
+@media (min-width: 768px) {
+  body.ox-body-public .pd-card {
+    padding: 1.5rem !important;
+  }
+  body.ox-body-public .pd-hero-img {
+    max-height: 420px;
+  }
+  /* Card producto en desktop: layout horizontal si el ancho lo permite */
+  body.ox-body-public .pd-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    align-items: start;
+  }
+  /* Barra sticky se convierte en block estático en tablet+ (menos intrusiva) */
+  body.ox-body-public .pd-add-bar {
+    /* En tablet+ preferimos que el CTA quede in-flow del contenido detalle,
+       no fijo al viewport — hay más espacio vertical y el sticky compite
+       con contenido del combo. */
+    position: sticky;
+    bottom: 12px;
+    margin: 1rem auto;
+    max-width: 720px;
+    border-radius: var(--lg-radius-lg) !important;
+    box-shadow: var(--lg-shadow-lg);
+  }
+  /* Chat web en tablet: burbujas más grandes, sin desperdiciar espacio */
+  body.ox-body-public .wcp-message { max-width: min(70%, 640px) !important; }
+}
+
+/* ══ TABLET GRANDE / DESKTOP (1024+): centrar contenido con max-width ══ */
+@media (min-width: 1024px) {
+  body.ox-body-public .pd-card { max-width: 960px; margin: 1.5rem auto; }
+  body.ox-body-public .pd-hero-img { max-height: 480px; border-radius: var(--lg-radius-lg) !important; margin: 1rem auto; max-width: 960px; }
+}
+
+/* ══ FOLDABLES / MUY GRANDES (1400+): límite razonable ══ */
+@media (min-width: 1400px) {
+  body.ox-body-public main {
+    max-width: 1280px !important;
+    margin: 0 auto !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    12. TOUCH TARGETS Y OVERFLOW — auditoría 2026-09-27
    Consolidamos aquí los fixes globales para prevenir issues detectados:
      · Botones sub-44px en flujos táctiles críticos.

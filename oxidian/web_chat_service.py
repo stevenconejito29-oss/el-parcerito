@@ -450,7 +450,25 @@ def _intent_answer(intent: str) -> str | None:
     if intent == "availability":
         return f"El Menú muestra únicamente productos y opciones disponibles en este momento. Abre el producto para revisar tamaños, sabores, extras y precio actual: {public_url}"
     if intent == "receipt":
-        return "Al terminar recibes una ficha con número de pedido, productos, cantidades, entrega, forma de pago y total. Ese número identifica tu compra; desde «Ver estado» puedes volver a consultar la ficha en este dispositivo."
+        # Si el visitante tiene pedidos activos, se listan como cards con
+        # tracking_url = /pedido/<id>/confirmado (ticket digital). El chat
+        # frontend los renderiza automáticamente debajo del mensaje.
+        orders = visitor_orders()
+        if orders:
+            n = len(orders)
+            plural = "s" if n != 1 else ""
+            return (
+                f"Aquí tienes tu{plural} ticket{plural} digital{plural} de pedido{plural} activo{plural} "
+                f"({n}). Pulsa «Ver estado» debajo para abrir el ticket completo con número, "
+                "productos, entrega y forma de pago. Puedes compartirlo si lo necesitas."
+            )
+        return (
+            "Ahora mismo no tengo pedidos activos en este dispositivo. "
+            "Cuando hagas una compra, recibirás una ficha con número de pedido, "
+            "productos, cantidades, entrega, forma de pago y total. "
+            "Ese número identifica tu compra; desde «Ver estado» puedes volver a consultar "
+            "la ficha en este dispositivo."
+        )
     if intent == "reorder":
         return "Si este dispositivo reconoce una compra anterior entregada, aparecerá debajo «Repetir compra». Añadiremos a la canasta solo los productos que sigan disponibles; sabores, extras o variantes se vuelven a elegir para evitar errores de precio."
     if intent == "catalog":
