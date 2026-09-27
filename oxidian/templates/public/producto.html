@@ -14,17 +14,19 @@
     <img src="{{ src }}" alt="{{ producto.nombre }}" class="pd-hero-img-el"
          data-image-fallback="next">
     <div class="pd-hero-fallback" style="display:none">
-      {% if producto.es_combo %}🎁
-      {% elif producto.categoria and 'beb' in producto.categoria.nombre|lower %}🥤
-      {% elif producto.categoria and 'arepa' in producto.categoria.nombre|lower %}🫓
-      {% else %}{{ brand.fallback_emoji or "🍽️" }}{% endif %}
+      {# Fallback multi-tienda: categoria.emoji configurable primero,
+         luego contexto por vertical (comida vs retail). #}
+      {% if producto.categoria and producto.categoria.emoji %}{{ producto.categoria.emoji }}
+      {% elif producto.es_combo %}🎁
+      {% else %}{{ brand.fallback_emoji or brand.vertical_emoji or ('🍽️' if brand.es_comida else '🛍️') }}{% endif %}
     </div>
   {% else %}
     <div class="pd-hero-fallback">
-      {% if producto.es_combo %}🎁
-      {% elif producto.categoria and 'beb' in producto.categoria.nombre|lower %}🥤
-      {% elif producto.categoria and 'arepa' in producto.categoria.nombre|lower %}🫓
-      {% else %}{{ brand.fallback_emoji or "🍽️" }}{% endif %}
+      {# Fallback multi-tienda: categoria.emoji configurable primero,
+         luego contexto por vertical (comida vs retail). #}
+      {% if producto.categoria and producto.categoria.emoji %}{{ producto.categoria.emoji }}
+      {% elif producto.es_combo %}🎁
+      {% else %}{{ brand.fallback_emoji or brand.vertical_emoji or ('🍽️' if brand.es_comida else '🛍️') }}{% endif %}
     </div>
   {% endif %}
 

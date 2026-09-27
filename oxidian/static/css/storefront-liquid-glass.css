@@ -429,24 +429,139 @@ body.ox-body-public .pd-combo-guide {
   box-shadow: var(--lg-shadow-md), var(--lg-glow) !important;
 }
 
-/* Cada paso del combo (Paso 1, Paso 2...) */
+/* ═══ Cada paso del combo (Paso 1, Paso 2...) ═══
+   Tres estados visuales bien distinguibles:
+   · Default: card neutra (paso todavía no llegado)
+   · .is-active: card RESALTADA — foco del cliente ahora
+   · .is-done: card compacta con check verde (ya completada)
+*/
 body.ox-body-public .pd-cstep {
   background: color-mix(in srgb, var(--theme-surface) 85%, transparent) !important;
-  border: 1px solid var(--lg-glass-border) !important;
+  border: 1.5px solid var(--lg-glass-border) !important;
   border-radius: var(--lg-radius-md) !important;
   padding: 1rem;
+  margin-bottom: 1rem;
   box-shadow: var(--lg-shadow-sm);
-  transition: border-color .2s, box-shadow .2s;
+  transition: border-color .2s, box-shadow .2s, opacity .2s, transform .2s;
+  position: relative;
 }
+/* Pasos "futuros" (aún no abordados): atenuados pero legibles */
+body.ox-body-public .pd-cstep:not(.is-active):not(.is-done) {
+  opacity: .78;
+}
+/* Paso ACTIVO — el que el cliente debe resolver ahora */
 body.ox-body-public .pd-cstep.is-active {
-  border-color: color-mix(in srgb, var(--brand-primary) 55%, var(--lg-glass-border-strong)) !important;
+  border-color: var(--brand-primary) !important;
+  border-width: 2px !important;
+  background: color-mix(in srgb, var(--brand-primary) 6%, var(--theme-surface)) !important;
   box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--brand-primary) 12%, transparent),
-    var(--lg-shadow-md) !important;
+    0 0 0 4px color-mix(in srgb, var(--brand-primary) 15%, transparent),
+    0 10px 26px color-mix(in srgb, var(--brand-primary) 15%, transparent) !important;
+  opacity: 1 !important;
+  transform: scale(1.005);
 }
+/* Paso COMPLETADO — verde de éxito, compacto */
 body.ox-body-public .pd-cstep.is-done {
-  background: color-mix(in srgb, var(--theme-success, #22c55e) 6%, var(--theme-surface)) !important;
-  border-color: color-mix(in srgb, var(--theme-success, #22c55e) 30%, var(--lg-glass-border)) !important;
+  background: color-mix(in srgb, var(--theme-success, #22c55e) 4%, var(--theme-surface)) !important;
+  border-color: color-mix(in srgb, var(--theme-success, #22c55e) 45%, var(--lg-glass-border)) !important;
+  opacity: 1 !important;
+}
+body.ox-body-public .pd-cstep.is-done .pd-cstep-body {
+  /* Compactar el body cuando ya está resuelto: menos ruido visual */
+  max-height: 0;
+  overflow: hidden;
+  padding: 0;
+  transition: max-height .28s ease, padding .2s;
+}
+
+/* Número del paso — badge circular grande, indicador jerárquico */
+body.ox-body-public .pd-cstep-num {
+  width: 36px !important; height: 36px !important;
+  min-width: 36px !important;
+  border-radius: 999px !important;
+  display: inline-flex !important;
+  align-items: center !important; justify-content: center !important;
+  font-weight: 950 !important;
+  font-size: 1rem !important;
+  background: var(--lg-glass-bg-strong) !important;
+  color: color-mix(in srgb, var(--theme-text) 60%, transparent);
+  border: 2px solid var(--lg-glass-border-strong);
+  transition: all .2s;
+}
+body.ox-body-public .pd-cstep.is-active .pd-cstep-num {
+  background: linear-gradient(135deg,
+    var(--brand-primary),
+    color-mix(in srgb, var(--brand-primary) 78%, #000)) !important;
+  color: var(--brand-on-primary, #1B0A00) !important;
+  border-color: var(--brand-primary) !important;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--brand-primary) 40%, transparent);
+  animation: pdStepPulse 2s ease-in-out infinite;
+}
+body.ox-body-public .pd-cstep.is-done .pd-cstep-num {
+  background: var(--theme-success, #22c55e) !important;
+  color: #fff !important;
+  border-color: var(--theme-success, #22c55e) !important;
+}
+@keyframes pdStepPulse {
+  0%, 100% { box-shadow: 0 4px 14px color-mix(in srgb, var(--brand-primary) 40%, transparent); }
+  50% { box-shadow: 0 4px 20px color-mix(in srgb, var(--brand-primary) 60%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.ox-body-public .pd-cstep.is-active .pd-cstep-num { animation: none; }
+}
+
+/* Título del paso — jerarquía clara */
+body.ox-body-public .pd-cstep-ttl {
+  font-size: 1.02rem !important;
+  font-weight: 900 !important;
+  color: var(--theme-text) !important;
+  line-height: 1.25 !important;
+  margin: 0 0 2px 0 !important;
+  overflow-wrap: anywhere;
+}
+body.ox-body-public .pd-cstep-sub {
+  font-size: .82rem !important;
+  color: color-mix(in srgb, var(--theme-text) 60%, transparent) !important;
+  line-height: 1.4 !important;
+  margin: 0 !important;
+}
+
+/* Badge de estado del paso (Pendiente/Falta sabor/✓ Listo) */
+body.ox-body-public .pd-cstep-badge {
+  padding: 5px 12px !important;
+  border-radius: 999px !important;
+  font-size: .72rem !important;
+  font-weight: 900 !important;
+  letter-spacing: .02em;
+  border: 1.5px solid;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+body.ox-body-public .pd-cstep-badge.pd-cstep-pending {
+  background: color-mix(in srgb, var(--theme-warning, #f59e0b) 12%, transparent) !important;
+  border-color: color-mix(in srgb, var(--theme-warning, #f59e0b) 40%, transparent) !important;
+  color: color-mix(in srgb, var(--theme-warning, #f59e0b) 82%, #000) !important;
+}
+body.ox-body-public .pd-cstep-badge.pd-cstep-done {
+  background: color-mix(in srgb, var(--theme-success, #22c55e) 14%, transparent) !important;
+  border-color: color-mix(in srgb, var(--theme-success, #22c55e) 50%, transparent) !important;
+  color: color-mix(in srgb, var(--theme-success, #22c55e) 82%, #000) !important;
+}
+
+/* Progress hint "↓ Elige los sabores de tu base" */
+body.ox-body-public .pd-cstep-progress {
+  margin: .8rem 0 !important;
+  padding: 10px 14px !important;
+  border-radius: 12px !important;
+  background: color-mix(in srgb, var(--brand-primary) 8%, transparent) !important;
+  border: 1px dashed color-mix(in srgb, var(--brand-primary) 40%, transparent) !important;
+  color: color-mix(in srgb, var(--brand-primary) 82%, #000) !important;
+  font-size: .82rem !important;
+  font-weight: 800 !important;
+  text-align: center;
+}
+body.ox-body-public .pd-cstep.is-done .pd-cstep-progress {
+  display: none;
 }
 
 /* Cada opción del combo (radio + thumb + nombre) */
