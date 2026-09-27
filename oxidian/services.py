@@ -32,7 +32,7 @@ from models import (
     User,
     normalizar_metodo_pago,
 )
-from store_config import get_loyalty_terms, get_store_features
+from store_config import get_loyalty_terms, get_store_features, get_store_value
 
 logger = logging.getLogger(__name__)
 
@@ -4058,6 +4058,34 @@ MENSAJES_ESTADO = {
     "cancelado":  "😔 *Pedido cancelado*\nTu pedido *{num}* fue cancelado. Sentimos los inconvenientes.\nSi necesitas ayuda, abre el chat dentro de nuestra app. 💬",
 }
 
+# Plantillas especializadas para RECOGIDA en local: cuando el pedido pasa
+# a `listo`, el cliente no lo recibe en su casa — tiene que venir. El
+# mensaje incluye ubicación de Google Maps del negocio para que llegue
+# sin equivocarse. Se selecciona en `mensaje_estado_pedido()` cuando
+# `tipo_entrega_cliente == 'recogida'`.
+MENSAJES_ESTADO_RECOGIDA = {
+    "listo": (
+        "✅ *¡Tu pedido está listo para recoger!*\n"
+        "El pedido *{num}* ya está preparado y te espera en el local. 🏪\n\n"
+        "📍 *Dirección:*\n{direccion}\n\n"
+        "🗺️ *Cómo llegar:*\n{maps_url}\n\n"
+        "Cuando llegues, indica el número de pedido y lo tenemos listo para ti."
+    ),
+}
+
+
+def _google_maps_url(direccion: str) -> str:
+    """Genera enlace de Google Maps para navegar hasta una dirección.
+
+    Usa la API pública `maps/search/?api=1&query=` que funciona en móvil
+    (abre la app nativa) y desktop (abre maps.google.com). Sin coordenadas
+    exactas → la dirección de texto es suficiente para llegar al local.
+    """
+    if not direccion:
+        return ""
+    from urllib.parse import quote
+    return f"https://www.google.com/maps/search/?api=1&query={quote(direccion)}"
+
 
 def _resumen_composicion_pedido(pedido: Order, max_items: int = 8) -> str:
     """Devuelve un resumen compacto y legible en WhatsApp de qué compone el
@@ -4160,6 +4188,18 @@ _ESTADOS_INCLUIR_COMPOSICION = frozenset({"pendiente", "en_ruta"})
 
 
 def mensaje_estado_pedido(pedido: Order) -> str:
+    # RECOGIDA + LISTO tiene plantilla dedicada con Maps + dirección: el
+    # cliente tiene que venir, no le llega. El mensaje genérico "sale hacia
+    # ti" no aplica y confunde al cliente que eligió recoger en local.
+    es_recogida = (getattr(pedido, 'tipo_entrega_cliente', '') or '') == 'recogida'
+    if es_recogida and pedido.estado in MENSAJES_ESTADO_RECOGIDA:
+        direccion = (get_store_value("DIRECCION_NEGOCIO") or "").strip() or "Consulta la dirección en la web"
+        maps_url = _google_maps_url(direccion) or "(dirección no disponible)"
+        return MENSAJES_ESTADO_RECOGIDA[pedido.estado].format(
+            num=pedido.numero_pedido,
+            direccion=direccion,
+            maps_url=maps_url,
+        )
     plantilla = MENSAJES_ESTADO.get(pedido.estado)
     if not plantilla:
         return ""
