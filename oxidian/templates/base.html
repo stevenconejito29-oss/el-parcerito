@@ -238,6 +238,11 @@
      sobre el resto de CSS de la vista pública. Sólo estilos: no toca
      estructura HTML ni JS ni lógica. #}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-liquid-glass.css', v=asset_version) }}">
+  {# Marcador de versión — solo comentario HTML, sirve para depurar cache.
+     Si el usuario abre "Ver código fuente" en el navegador y ve este
+     comentario, confirma que la HTML llegó fresh del server. Si no lo
+     ve, el navegador está sirviendo HTML cacheado. #}
+  <!-- oxidian-ui-build: 2026-09-27 · liquid-glass · article-cards · glovo-style -->
 </head>
 {# El detalle ya tiene navegación de regreso y una barra de compra fija.
    Apilar además la navegación inferior duplicaba controles y cubría el
