@@ -1260,6 +1260,81 @@ body.ox-body-public .pd-cstep-body {
   }
 }
 
+/* ══ MODAL: reducir tamaño global en móvil (era muy grande) ══ */
+@media (max-width: 480px) {
+  body.ox-body-public .ep-modal-body {
+    padding: .65rem .75rem .85rem !important;
+  }
+  body.ox-body-public .ep-modal-name { font-size: 1.1rem !important; }
+  body.ox-body-public .ep-modal-desc { font-size: .8rem !important; line-height: 1.45 !important; }
+  body.ox-body-public .ep-modal-price { font-size: 1.35rem !important; }
+  body.ox-body-public .ep-modal-cat { font-size: .6rem !important; }
+  body.ox-body-public .ep-modal-alerg,
+  body.ox-body-public .ep-modal-hipo,
+  body.ox-body-public .ep-modal-combo-info { padding: 8px 10px !important; margin: 8px 0 !important; }
+  body.ox-body-public .ep-modal-alerg-ttl { font-size: .68rem !important; }
+  body.ox-body-public .ep-modal-notas-input { min-height: 48px !important; padding: 8px 10px !important; }
+  body.ox-body-public .ep-modal-notas-lbl { font-size: .74rem !important; }
+  body.ox-body-public .ep-modal-close { min-width: 32px !important; min-height: 32px !important; }
+  /* Actions row (qty + botón añadir) más compacto */
+  body.ox-body-public .ep-modal-actions {
+    grid-template-columns: 96px minmax(0, 1fr) !important;
+    gap: 8px !important;
+  }
+  body.ox-body-public .ep-modal-add-btn {
+    padding: 0 12px !important;
+    font-size: .88rem !important;
+  }
+  body.ox-body-public .ep-modal-qty-btn { min-width: 34px !important; min-height: 40px !important; }
+  body.ox-body-public .ep-modal-qty-display { min-width: 26px !important; font-size: 1rem !important; }
+  /* Ficha producto — reducir gap y padding en general */
+  body.ox-body-public .pd-hero-img { max-height: 220px !important; }
+  body.ox-body-public .pd-card {
+    padding: .85rem .8rem 1.1rem !important;
+    border-radius: var(--lg-radius-md) !important;
+  }
+  body.ox-body-public .pd-cstep {
+    padding: .85rem !important;
+    margin-bottom: .65rem !important;
+  }
+  body.ox-body-public .pd-cstep-hd { gap: 8px !important; }
+  body.ox-body-public .pd-cstep-num {
+    width: 32px !important; height: 32px !important;
+    min-width: 32px !important;
+    font-size: .9rem !important;
+  }
+  body.ox-body-public .pd-cstep-ttl { font-size: .95rem !important; }
+  body.ox-body-public .pd-cstep-sub { font-size: .74rem !important; }
+  body.ox-body-public .pd-cstep-badge { font-size: .66rem !important; padding: 3px 8px !important; }
+  body.ox-body-public .pd-cstep-progress { padding: 8px 10px !important; font-size: .76rem !important; margin: .55rem 0 !important; }
+  body.ox-body-public .pd-combo-item { padding: 8px !important; }
+  body.ox-body-public .pd-combo-thumb { width: 54px !important; height: 54px !important; min-width: 54px !important; font-size: 1.4rem !important; }
+  body.ox-body-public .pd-combo-unit-row { padding: 8px !important; margin: 6px 0 !important; }
+  /* Grid producto home: 2 columnas siempre en móvil, menor gap */
+  body.ox-body-public .ep-grid,
+  body.ox-body-public [class*="ep-cat-grid"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+  /* Card producto más compacta */
+  body.ox-body-public .ep-card-img { min-height: 120px !important; }
+  body.ox-body-public .ep-card-name { font-size: .88rem !important; margin: 3px 0 4px !important; }
+  body.ox-body-public .ep-card-desc { font-size: .72rem !important; -webkit-line-clamp: 1 !important; margin: 0 0 5px !important; }
+  body.ox-body-public .ep-card-price { font-size: 1rem !important; }
+  body.ox-body-public .ep-card-kicker { font-size: .58rem !important; }
+  body.ox-body-public .ep-card-body { padding: 9px 10px 10px !important; }
+  body.ox-body-public .ep-card-footer { gap: 6px !important; margin-top: 6px !important; }
+  body.ox-body-public .ep-btn-add {
+    width: 40px !important; height: 40px !important;
+    min-width: 40px !important; min-height: 40px !important;
+    box-shadow: 0 4px 10px color-mix(in srgb, var(--brand-primary) 35%, transparent), 0 0 0 2px var(--theme-surface) !important;
+  }
+  body.ox-body-public .ep-btn-detail { font-size: .72rem !important; padding: 0 10px !important; min-height: 40px !important; }
+  /* Section titles compactos */
+  body.ox-body-public .ep-section-title { font-size: 1rem !important; margin: .8rem 0 .5rem !important; }
+  body.ox-body-public .ep-cat-title { font-size: .95rem !important; margin: .6rem 0 .4rem !important; }
+}
+
 /* ══ PANTALLAS MUY PEQUEÑAS (280-320px: iPhone 5s/SE 1st, Galaxy A03) ══ */
 @media (max-width: 320px) {
   body.ox-body-public .ep-card-body { padding: 8px 10px 10px !important; }
