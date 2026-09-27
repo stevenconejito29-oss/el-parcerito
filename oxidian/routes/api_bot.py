@@ -3282,9 +3282,20 @@ def responder_confirmacion_pedido():
     raw = str(data.get("respuesta") or "").strip().lower()
     palabras_si = {"si", "sí", "s", "ok", "vale", "confirmo", "confirmar", "confirmado"}
     palabras_no = {"no", "n", "cancelo", "cancelar", "cancelado", "anular"}
-    if raw in palabras_si:
+    # Tolerante a frases: el cliente puede escribir "sí confirmo" o
+    # "Hola, confirmo mi pedido" — buscamos palabras clave como PALABRA
+    # COMPLETA (regex \b), no solo match exacto. Evita el bug del ticket
+    # digital que enviaba una frase larga con "confirmo" incrustada.
+    import re as _re
+    def _tiene_palabra(texto: str, palabras: set) -> bool:
+        for p in palabras:
+            if _re.search(rf"\b{_re.escape(p)}\b", texto):
+                return True
+        return False
+
+    if _tiene_palabra(raw, palabras_si) and not _tiene_palabra(raw, palabras_no):
         accion = "confirmar"
-    elif raw in palabras_no:
+    elif _tiene_palabra(raw, palabras_no) and not _tiene_palabra(raw, palabras_si):
         accion = "cancelar"
     else:
         return jsonify({
