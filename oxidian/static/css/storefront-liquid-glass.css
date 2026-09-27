@@ -706,6 +706,73 @@ body.ox-body-public .ep-modal-overlay {
   body.ox-body-public .pd-flavor-chip { padding: .55rem .85rem !important; font-size: .85rem !important; }
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   12. TOUCH TARGETS Y OVERFLOW — auditoría 2026-09-27
+   Consolidamos aquí los fixes globales para prevenir issues detectados:
+     · Botones sub-44px en flujos táctiles críticos.
+     · Cards que podrían desbordar en pantallas estrechas.
+     · Text con nowrap sin ellipsis.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Botón eliminar item del carrito (era 36×36 solo en reduced-motion MQ,
+   pero debería serlo por defecto en todo). */
+body.ox-body-public .cr-remove {
+  width: 44px !important; height: 44px !important;
+  min-width: 44px !important; min-height: 44px !important;
+}
+
+/* Chip categoría del kicker en la tarjeta — nunca corta texto */
+body.ox-body-public .ep-card-kicker {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.25;
+}
+
+/* Botones del combo builder de la home preview — glass sutil */
+body.ox-body-public .combo-included-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+body.ox-body-public .combo-included-list li {
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--theme-text) 78%, transparent);
+  overflow-wrap: anywhere;
+}
+
+/* Grid de productos del home — mínimo 145px por card evita 1-col en 320px */
+body.ox-body-public .ep-grid,
+body.ox-body-public [class*="ep-cat-grid"] {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 145px), 1fr));
+}
+@media (min-width: 480px) {
+  body.ox-body-public .ep-grid,
+  body.ox-body-public [class*="ep-cat-grid"] {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 168px), 1fr));
+    gap: 14px;
+  }
+}
+@media (min-width: 768px) {
+  body.ox-body-public .ep-grid,
+  body.ox-body-public [class*="ep-cat-grid"] {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+    gap: 16px;
+  }
+}
+
+/* Cards que respetan min-width 0 en su parent para no desbordar */
+body.ox-body-public .ep-card,
+body.ox-body-public .ep-card-body,
+body.ox-body-public .ep-card-footer {
+  min-width: 0;
+}
+
 /* Móviles pequeños (≤ 360px: iPhone SE, Galaxy A14) */
 @media (max-width: 360px) {
   body.ox-body-public .ep-modal-panel {
@@ -716,6 +783,25 @@ body.ox-body-public .ep-modal-overlay {
   body.ox-body-public .pd-extra-option input.pd-extra-qty { width: 44px !important; }
   body.ox-body-public .pd-qty-btn { min-width: 40px !important; }
   body.ox-body-public .pd-add-btn { font-size: .88rem !important; }
+  /* Tarjeta producto compacta en móviles muy estrechos */
+  body.ox-body-public .ep-card-body { padding: 10px 12px 12px !important; }
+  body.ox-body-public .ep-card-name { font-size: .95rem !important; }
+  body.ox-body-public .ep-card-price { font-size: 1.05rem !important; }
+  body.ox-body-public .ep-btn-add {
+    width: 44px !important; height: 44px !important;
+    min-width: 44px !important; min-height: 44px !important;
+  }
+  body.ox-body-public .ep-btn-detail {
+    font-size: .78rem !important;
+    padding: 0 12px !important;
+  }
+  /* Badges overlay: reduce right para no chocar con cart-qty en 320px */
+  body.ox-body-public .ep-card-badges { right: 50px !important; gap: 3px; }
+  body.ox-body-public .ep-cbadge { font-size: .58rem !important; padding: 2px 6px !important; }
+  body.ox-body-public .ep-card-cart-qty {
+    min-width: 28px; min-height: 28px;
+    font-size: .82rem;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
