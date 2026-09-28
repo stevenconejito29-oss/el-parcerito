@@ -1611,6 +1611,39 @@ body.ox-body-public .pd-combo-guide-track {
 /* Extra option en móvil pequeño (≤380px): pasa a columna vertical para que
    nombre + precio + stepper no compitan por ancho en una sola línea. */
 @media (max-width: 380px) {
+  /* Combo option (AQUARIUS LIMON card) compactado: capturas mostraban
+     radio grande + thumb 60px + nombre uppercase 1rem = mucho vertical.
+     Ahora radio 20 + thumb 44 + nombre .82rem sin uppercase forzado. */
+  body.ox-body-public .pd-combo-opcion {
+    padding: 8px !important;
+    gap: 8px !important;
+    grid-template-columns: 20px 44px minmax(0, 1fr) !important;
+    min-height: auto !important;
+  }
+  body.ox-body-public .pd-combo-input[type="radio"],
+  body.ox-body-public .pd-combo-input[type="checkbox"] {
+    width: 20px !important; height: 20px !important;
+    min-width: 20px !important;
+  }
+  body.ox-body-public .pd-combo-opt-thumb {
+    width: 44px !important; height: 44px !important;
+    min-width: 44px !important;
+    font-size: 1.2rem !important;
+  }
+  body.ox-body-public .pd-combo-opt-name {
+    font-size: .84rem !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+    line-height: 1.2 !important;
+    font-weight: 800 !important;
+  }
+  body.ox-body-public .pd-combo-opt-desc {
+    font-size: .68rem !important;
+    line-height: 1.3 !important;
+    color: color-mix(in srgb, var(--theme-text) 60%, transparent) !important;
+    word-spacing: .04em;
+  }
+
   body.ox-body-public .pd-extra-option {
     grid-template-columns: 1fr !important;
     gap: 6px !important;

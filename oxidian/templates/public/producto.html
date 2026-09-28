@@ -645,7 +645,8 @@
             {% if item.es_predeterminado %}<span class="pd-combo-opt-desc" style="color:var(--theme-success);font-weight:900">Recomendada</span>{% endif %}
             {% if item.precio_extra and item.precio_extra > 0 %}<span class="pd-combo-opt-desc" style="color:var(--brand-primary);font-weight:900">+€{{ "%.2f"|format(item.precio_extra) }}</span>{% endif %}
             {% if item.componente.descripcion %}
-            <span class="pd-combo-opt-desc">{{ item.componente.descripcion[:70] }}</span>
+            {# Espacio tras coma para "REFRESCO,BEBIDA,330ML" sin separación. #}
+            <span class="pd-combo-opt-desc">{{ item.componente.descripcion[:70]|replace(',', ', ')|replace(',  ', ', ') }}</span>
             {% endif %}
           </span>
           {% set al = item.componente.alergenos_iconos %}
