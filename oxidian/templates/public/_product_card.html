@@ -56,14 +56,35 @@
       <div class="ep-card-img-emoji">{{ _card_emoji }}</div>
     {% endif %}
 
-    {# Badges overlay TOP-LEFT — información contextual crítica #}
+    {# Badge de cantidad en carrito (TOP-RIGHT) — bien visible #}
+    {% if _qty_cart > 0 %}
+    <span class="ep-card-cart-qty" aria-label="{{ _qty_cart }} en tu canasta">{{ _qty_cart }}</span>
+    {% endif %}
+  </a>
+
+  {# ── BODY compacto con jerarquía clara ── #}
+  <div class="ep-card-body">
+    <div class="ep-card-kicker-row">
+      <span class="ep-card-kicker">
+        {% if p.es_combo %}Combo
+        {% elif p.tipo_entrega in ('programado','encargo') %}Fecha fija
+        {% elif p.categoria %}{{ p.categoria.nombre }}
+        {% else %}Disponible{% endif %}
+      </span>
+      {% if _card.rating %}
+      <span class="ep-card-highlight ep-card-rating" title="Valoración media">★ {{ "%.1f"|format(_card.rating) }}</span>
+      {% elif p.stock_mostrar_en_web and p.tipo_entrega == 'inmediato' and not _card.stock|stock_is_unlimited %}
+      <span class="ep-card-stock-mini">{{ _card.stock }} disp.</span>
+      {% endif %}
+    </div>
+
+    {# Modalidad y condiciones: texto visible también en móvil #}
     <div class="ep-card-badges">
       {% set fb = fulfillment_badge(p) %}
       <span class="ep-cbadge ep-cbadge-fulfillment" title="{{ fb.title }}">
         <span aria-hidden="true">{{ fb.emoji }}</span>
         <span class="ep-cbadge-label">{{ fb.label }}</span>
       </span>
-      {% if p.es_combo %}<span class="ep-cbadge ep-cbadge-combo">🎁 COMBO</span>{% endif %}
       {% if p.tipo_entrega in ('programado','encargo') %}
       <span class="ep-cbadge ep-cbadge-encargo">📆 Fecha fija{% if p.fecha_llegada %}: {{ p.fecha_llegada.strftime('%d/%m') }}{% endif %}</span>
       {% endif %}
@@ -89,28 +110,6 @@
       {% endif %}
     </div>
 
-    {# Badge de cantidad en carrito (TOP-RIGHT) — bien visible #}
-    {% if _qty_cart > 0 %}
-    <span class="ep-card-cart-qty" aria-label="{{ _qty_cart }} en tu canasta">{{ _qty_cart }}</span>
-    {% endif %}
-  </a>
-
-  {# ── BODY compacto con jerarquía clara ── #}
-  <div class="ep-card-body">
-    <div class="ep-card-kicker-row">
-      <span class="ep-card-kicker">
-        {% if p.es_combo %}Combo
-        {% elif p.tipo_entrega in ('programado','encargo') %}Fecha fija
-        {% elif p.categoria %}{{ p.categoria.nombre }}
-        {% else %}Disponible{% endif %}
-      </span>
-      {% if _card.rating %}
-      <span class="ep-card-highlight ep-card-rating" title="Valoración media">★ {{ "%.1f"|format(_card.rating) }}</span>
-      {% elif p.stock_mostrar_en_web and p.tipo_entrega == 'inmediato' and not _card.stock|stock_is_unlimited %}
-      <span class="ep-card-stock-mini">{{ _card.stock }} disp.</span>
-      {% endif %}
-    </div>
-
     <a class="ep-card-title-link"
        href="{{ url_for('public.producto_detalle', producto_id=p.id, origen=_product_origin) }}">
       <p class="ep-card-name">{{ p.nombre }}</p>
@@ -125,28 +124,30 @@
       {% set preview = _card.combo_items %}
       {% if preview %}
         {% set fijos_p = preview|selectattr('es_seleccionable','equalto',False)|list %}
-        {% set sels_p  = preview|selectattr('es_seleccionable')|list %}
-        {% set gs = sels_p|map(attribute='grupo_display')|unique|list %}
         <div class="ep-card-combo-panel">
           {% if fijos_p %}
           <div class="ep-card-combo-line">
             <span class="ep-card-combo-label">Incluido</span>
             <ul class="combo-included-list">
-              {% for ci in fijos_p[:3] %}<li><strong>{{ ci.cantidad }}×</strong> {{ ci.componente.nombre }}</li>{% endfor %}
-              {% if fijos_p|length > 3 %}<li>+ {{ fijos_p|length - 3 }} más</li>{% endif %}
+              {% for ci in fijos_p %}
+              <li><strong>{{ ci.cantidad }}×</strong><span>{{ ci.componente.nombre }}{% if ci.presentacion %} · {{ ci.presentacion.label }}{% endif %}{% if ci.fixed_flavor_option %} · {{ ci.fixed_flavor_option.nombre }}{% endif %}</span></li>
+              {% endfor %}
             </ul>
           </div>
           {% endif %}
-          {% if sels_p %}
+          {% if _card.combo_choices %}
           <div class="ep-card-combo-line">
             <span class="ep-card-combo-label">A tu gusto</span>
-            <span class="ep-card-combo-copy">{{ gs|join(' · ') }}</span>
+            {% for choice in _card.combo_choices %}
+            <span class="ep-card-combo-copy"><strong>{{ choice.name }}</strong> · {% if choice.minimum == choice.maximum %}Elige {{ choice.maximum }}{% else %}Elige entre {{ choice.minimum }} y {{ choice.maximum }}{% endif %}</span>
+            {% endfor %}
+            <small class="ep-card-price-note">Revisa las opciones y sus suplementos al armarlo.</small>
           </div>
           {% endif %}
         </div>
       {% else %}
       <div class="ep-card-combo-panel ep-card-combo-panel-warn">
-        <span class="ep-card-combo-copy">Combo pendiente de configurar por el admin.</span>
+        <span class="ep-card-combo-copy">No disponible en este momento.</span>
       </div>
       {% endif %}
     {% endif %}
@@ -192,17 +193,20 @@
           </span>
           <span class="ep-card-price-note">Solo canje</span>
         {% else %}
-          {% if _tallas|length > 0 %}
-          <span class="ep-card-price">Desde €{{ "%.2f"|format(p.precio_final) }}</span>
+          {% if p.es_combo and p.combo_precio_modo_normalizado == 'descuento_porcentaje' %}
+          <span class="ep-card-price">€{{ "%.2f"|format(_card.display_price) }}</span>
+          <span class="ep-card-price-note">Precio orientativo · depende de tu selección</span>
+          {% elif _tallas|length > 0 %}
+          <span class="ep-card-price">Desde €{{ "%.2f"|format(_card.display_price) }}</span>
           {% else %}
-          <span class="ep-card-price">€{{ "%.2f"|format(p.precio_final) }}</span>
+          <span class="ep-card-price">€{{ "%.2f"|format(_card.display_price) }}</span>
           {% endif %}
           {% if p.canjeable_con_puntos and p.puntos_para_canje %}
           <span class="ep-card-price-note ep-card-price-note--pts">o {{ p.puntos_para_canje }} {{ ui.loyalty_unit_plural }}</span>
           {% elif p.es_combo and p.combo_precio_modo_normalizado == 'descuento_porcentaje' and p.combo_descuento_pct_float > 0 %}
           <span class="ep-card-price-note">{{ "%.0f"|format(p.combo_descuento_pct_float) }}% dto</span>
           {% elif p.es_combo %}
-          <span class="ep-card-price-note">Precio combo</span>
+          <span class="ep-card-price-note">Precio base del combo</span>
           {% endif %}
         {% endif %}
         {% if _qty_cart > 0 %}
@@ -223,8 +227,11 @@
       {% elif not _card.available %}
         <span class="ep-btn-sold">Agotado</span>
       {% elif _is_detail_action %}
+        {# Botón detail con label CORTO + icono para caber en cards de 145px móvil.
+           Antes: "Armar combo" / "Personalizar" / "Ver fecha" → sobrepasaban
+           el ancho de la card en pantallas ≤380px. #}
         <a href="{{ url_for('public.producto_detalle', producto_id=p.id, origen=_product_origin) }}" class="ep-btn-detail">
-          {% if p.es_combo %}Armar combo{% elif _has_extras %}Personalizar{% else %}Ver fecha{% endif %}
+          {% if p.es_combo %}<span aria-hidden="true">🎁</span> Combo{% elif _has_extras %}<span aria-hidden="true">✨</span> Elegir{% else %}<span aria-hidden="true">📆</span> Fecha{% endif %}
         </a>
       {% else %}
         <button type="button" class="ep-btn-add" aria-label="{{ 'Añadir otra unidad de ' if _qty_cart > 0 else 'Añadir ' }}{{ p.nombre }}"

@@ -1839,6 +1839,35 @@ body.ox-body-public .pd-combo-flavor-ttl {
    ═══════════════════════════════════════════════════════════════════ */
 
 @media (max-width: 380px) {
+  /* ── FOOTER en columna: precio arriba, botón full-width abajo ──
+     Antes: precio + botón "Personalizar" competían por 145px de ancho
+     y el botón se comía la mitad o se recortaba. Ahora el botón ocupa
+     100% del ancho del card. */
+  body.ox-body-public .ep-card-footer {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 6px !important;
+  }
+  body.ox-body-public .ep-card-prices {
+    width: 100% !important;
+    justify-content: space-between !important;
+    align-items: baseline !important;
+  }
+  body.ox-body-public .ep-btn-detail {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 8px 6px !important;
+    font-size: .78rem !important;
+    min-height: 40px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+  }
+  /* ep-btn-add circular: se auto-alinea a la derecha en la fila del footer */
+  body.ox-body-public .ep-card-footer .ep-btn-add {
+    align-self: flex-end !important;
+  }
+
   /* ── Tarjeta de producto/combo: layout más compacto ── */
   body.ox-body-public .ep-card {
     border-radius: 14px !important;
