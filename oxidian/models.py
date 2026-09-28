@@ -1428,6 +1428,13 @@ class Product(db.Model):
         return float(self.precio)
 
     @property
+    def precio_base_venta(self):
+        """Base pública coherente con el cobro del combo de precio fijo."""
+        if self.es_combo and self.combo_precio_modo_normalizado == "fijo":
+            return self._money(self.combo_precio_base or self.precio_final)
+        return self._money(self.precio_final)
+
+    @property
     def combo_precio_modo_normalizado(self):
         modo = (self.combo_precio_modo or "fijo").strip().lower()
         return modo if modo in ("fijo", "descuento_porcentaje") else "fijo"
@@ -1499,7 +1506,7 @@ class Product(db.Model):
         if not self.es_combo:
             return self._money(self.precio_final)
 
-        componentes = list(self.combo_items)
+        componentes = [item for item in self.combo_items if item.activo]
         counts = {}
         for raw_id in (seleccion_item_ids or []):
             try:
@@ -1607,7 +1614,7 @@ class Product(db.Model):
         # Modo "fijo": el precio del combo se lee de `combo_precio_base`
         # (Decimal), NO de `precio_final` (float, refleja el campo `precio`).
         # Mezclar float con Decimal reventaba con TypeError cuando había extras.
-        base_fijo = self._money(self.combo_precio_base or self.precio_final)
+        base_fijo = self.precio_base_venta
         return self._money(
             base_fijo + self._money(extras) + self._money(presentation_adjustments)
         )

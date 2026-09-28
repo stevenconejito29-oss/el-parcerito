@@ -10,6 +10,7 @@ el menú sin cambiar el modelo transaccional usado por carrito y checkout.
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date
+from decimal import Decimal
 
 from sqlalchemy import func, or_
 from sqlalchemy.orm import joinedload
@@ -40,6 +41,8 @@ class CatalogProductView:
     flavor_catalog_max_selecciones: int = 1
     presentations: list = field(default_factory=list)
     combo_items: list = field(default_factory=list)
+    combo_choices: list = field(default_factory=list)
+    display_price: Decimal = Decimal("0.00")
     rating: float = 0.0
 
 
@@ -79,6 +82,8 @@ def build_catalog_projection(products, origin="propio"):
             ComboItem.query.options(
                 joinedload(ComboItem.componente),
                 joinedload(ComboItem.grupo),
+                joinedload(ComboItem.presentacion),
+                joinedload(ComboItem.fixed_flavor_option),
             )
             .filter(ComboItem.combo_id.in_(combo_ids))
             .order_by(ComboItem.combo_id, ComboItem.orden, ComboItem.id)
@@ -265,6 +270,21 @@ def build_catalog_projection(products, origin="propio"):
     projection = {}
     for product in products:
         items = combo_items.get(product.id, [])
+        visible_items = [item for item in items if item.activo and item.componente]
+        choice_groups = {}
+        for item in visible_items:
+            if item.es_seleccionable:
+                choice_groups.setdefault(item.grupo_display, item)
+        # Mismos límites publicados por el detalle y validados al añadir.
+        choices = [{
+            "name": name,
+            "minimum": max(1, int(item.grupo.min_selecciones or 1)) if item.grupo else 1,
+            "maximum": max(1, int(item.max_selecciones or 1)),
+        } for name, item in choice_groups.items()]
+        product_presentations = presentations.get(product.id, [])
+        display_price = product.precio_base_venta
+        if product_presentations and not product.es_combo:
+            display_price += min(product._money(row.precio_extra) for row in product_presentations)
         stock = combo_stock(product, items) if product.es_combo else stock_for(product)
         available = bool(product.activo)
         available = available and bool(product.visible_ahora) and belongs(product) and provider_active
@@ -283,8 +303,10 @@ def build_catalog_projection(products, origin="propio"):
             has_flavors=product.id in flavor_ids,
             flavors_required=product.id in required_flavor_ids,
             flavor_catalog_max_selecciones=flavor_max_selections.get(product.id, 1),
-            presentations=presentations.get(product.id, []),
-            combo_items=items,
+            presentations=product_presentations,
+            combo_items=visible_items,
+            combo_choices=choices,
+            display_price=display_price,
             rating=ratings.get(product.id, 0.0),
         )
     return projection
