@@ -92,6 +92,7 @@ body.ox-body-public .ep-card:active { transform: translateY(0) scale(.99); }
 
 /* Imagen del producto más presente — hero visual de la tarjeta */
 body.ox-body-public .ep-card-img {
+  display: block;
   aspect-ratio: 4 / 3;
   min-height: 160px !important;
   overflow: hidden;
@@ -101,8 +102,11 @@ body.ox-body-public .ep-card-img {
 body.ox-body-public .ep-card-img img {
   width: 100% !important;
   height: 100% !important;
-  object-fit: cover !important;
+  object-fit: cover;
   transition: transform .35s cubic-bezier(.2, .8, .3, 1);
+}
+body.ox-body-public .ep-card-image-contain .ep-card-img img {
+  object-fit: contain !important;
 }
 body.ox-body-public .ep-card:hover .ep-card-img img {
   transform: scale(1.06);
@@ -118,24 +122,22 @@ body.ox-body-public .ep-card-img-emoji {
     color-mix(in srgb, var(--brand-primary) 4%, var(--theme-surface)));
 }
 
-/* article como card (era div) — asegura block display en navegadores viejos */
-body.ox-body-public article.ep-card {
-  display: block;
-}
-
-/* Badges overlay top-left en la imagen — pill glass sobre foto */
+/* .ep-card-badges IN-FLOW (codex 2026-09-28): los badges están DENTRO
+   del body después del kicker-row, ya no como overlay sobre la imagen.
+   Se comportan como fila fluida de pills con wrap. */
 body.ox-body-public .ep-card-badges {
-  position: absolute;
-  top: 10px; left: 10px;
-  right: 60px; /* deja hueco al cart-qty top-right */
-  display: flex; flex-wrap: wrap;
+  display: flex;
+  flex-wrap: wrap;
   gap: 4px;
-  z-index: 2;
-  pointer-events: none;
+  margin: 4px 0 6px;
+  min-width: 0;
+  align-items: center;
 }
 body.ox-body-public .ep-card-badges .ep-cbadge {
-  pointer-events: auto;
   max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  line-height: 1.2;
 }
 
 /* Badge cantidad en carrito top-right — círculo brand llamativo */
@@ -1226,22 +1228,11 @@ body.ox-body-public :is(.pd-combo-item, .pd-combo-unit-row, .pd-combo-opcion) *:
   hyphens: auto;
 }
 
-/* Grid fluido del combo — pantallas pequeñas 1 col, tablet 2 cols */
+/* Las opciones se distribuyen por el espacio real del paso, no del viewport. */
 body.ox-body-public .pd-cstep-body {
   display: grid;
   gap: 10px;
-  grid-template-columns: 1fr;
-}
-@media (min-width: 640px) {
-  body.ox-body-public .pd-cstep-body {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-  }
-}
-@media (min-width: 900px) {
-  body.ox-body-public .pd-cstep-body {
-    grid-template-columns: repeat(3, 1fr);
-  }
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
 }
 
 /* Card producto en tablet+ — grid con más columnas */
@@ -1310,12 +1301,6 @@ body.ox-body-public .pd-cstep-body {
   body.ox-body-public .pd-combo-item { padding: 8px !important; }
   body.ox-body-public .pd-combo-thumb { width: 54px !important; height: 54px !important; min-width: 54px !important; font-size: 1.4rem !important; }
   body.ox-body-public .pd-combo-unit-row { padding: 8px !important; margin: 6px 0 !important; }
-  /* Grid producto home: 2 columnas siempre en móvil, menor gap */
-  body.ox-body-public .ep-grid,
-  body.ox-body-public [class*="ep-cat-grid"] {
-    grid-template-columns: repeat(2, 1fr) !important;
-    gap: 10px !important;
-  }
   /* Card producto más compacta */
   body.ox-body-public .ep-card-img { min-height: 120px !important; }
   body.ox-body-public .ep-card-name { font-size: .88rem !important; margin: 3px 0 4px !important; }
@@ -1335,13 +1320,157 @@ body.ox-body-public .pd-cstep-body {
   body.ox-body-public .ep-cat-title { font-size: .95rem !important; margin: .6rem 0 .4rem !important; }
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   COMBO + SABORES + EXTRAS — responsive garantizado en TODOS los tamaños
+   Feedback usuario: "combos y productos con sabor/extras se ven mal
+   y con información sin responsividad". Aplicamos wrap forzado + clamp
+   + grid fluido a TODOS los sub-elementos textuales.
+   ═══════════════════════════════════════════════════════════════════ */
+
+body.ox-body-public :is(.pd-combo-item, .pd-combo-opcion, .pd-combo-unit-row,
+                       .pd-combo-flavor, .pd-combo-presentation,
+                       .pd-cstep, .pd-cstep-hd, .pd-cstep-body,
+                       .pd-extras, .pd-extra-group, .pd-extra-option,
+                       .pd-flavor-chip, .pd-flavor-chips,
+                       .pd-combo-guide) {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+body.ox-body-public :is(.pd-combo-item, .pd-combo-opcion, .pd-combo-unit-row,
+                       .pd-combo-flavor, .pd-combo-presentation)
+                     :is(p, span, strong, small, em, div):not(input):not(button) {
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+  hyphens: auto;
+  min-width: 0;
+}
+
+/* Combo item: layout grid con thumb fijo + info flexible.
+   thumb size scales down en móvil con clamp. */
+body.ox-body-public .pd-combo-item {
+  display: grid !important;
+  grid-template-columns: clamp(48px, 14vw, 68px) minmax(0, 1fr) !important;
+  gap: clamp(6px, 2vw, 12px) !important;
+  align-items: start !important;
+}
+body.ox-body-public .pd-combo-thumb {
+  width: clamp(48px, 14vw, 68px) !important;
+  height: clamp(48px, 14vw, 68px) !important;
+  min-width: clamp(48px, 14vw, 68px) !important;
+  font-size: clamp(1.3rem, 4vw, 1.8rem) !important;
+}
+body.ox-body-public .pd-combo-info,
+body.ox-body-public .pd-combo-item-info {
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 3px;
+}
+body.ox-body-public .pd-combo-item-name {
+  font-size: clamp(.85rem, .78rem + .5vw, 1rem) !important;
+  font-weight: 800 !important;
+  line-height: 1.25 !important;
+}
+body.ox-body-public .pd-combo-item-desc {
+  font-size: clamp(.72rem, .68rem + .3vw, .82rem) !important;
+  color: color-mix(in srgb, var(--theme-text) 65%, transparent) !important;
+  line-height: 1.4 !important;
+}
+
+/* Opción de combo (radio + info + qty control) */
+body.ox-body-public .pd-combo-opcion {
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) auto !important;
+  gap: clamp(6px, 2vw, 12px) !important;
+  align-items: center !important;
+}
+body.ox-body-public .pd-combo-opcion .pd-combo-thumb + * {
+  min-width: 0 !important;
+}
+
+/* Chips de sabor + extras: fila con wrap fuerte, nunca desbordan */
+body.ox-body-public .pd-flavor-chips,
+body.ox-body-public .pd-combo-flavor-chips,
+body.ox-body-public .pd-extra-list {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: clamp(4px, 1.5vw, 8px) !important;
+  min-width: 0 !important;
+}
+body.ox-body-public .pd-flavor-chip {
+  flex: 0 1 auto !important;
+  min-height: 44px !important;
+  padding: clamp(.4rem, 1.5vw, .6rem) clamp(.6rem, 2.5vw, .95rem) !important;
+  font-size: clamp(.75rem, .7rem + .3vw, .88rem) !important;
+  max-width: 100% !important;
+}
+body.ox-body-public .pd-flavor-chip__name {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  overflow-wrap: anywhere !important;
+  max-width: 100% !important;
+  line-height: 1.2 !important;
+}
+
+/* Fila configurar unidad — texto SABOR + chips debajo */
+body.ox-body-public .pd-combo-unit-row {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: clamp(6px, 2vw, 10px) !important;
+}
+body.ox-body-public .pd-combo-unit-label,
+body.ox-body-public .pd-combo-flavor-ttl,
+body.ox-body-public .pd-combo-presentation-ttl {
+  font-size: clamp(.72rem, .68rem + .3vw, .82rem) !important;
+  font-weight: 900 !important;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: color-mix(in srgb, var(--theme-text) 62%, transparent) !important;
+}
+
+/* Extra option (con stepper ±) — grid fluido */
+body.ox-body-public .pd-extra-option {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  gap: clamp(8px, 2.5vw, 14px) !important;
+  align-items: center !important;
+  padding: clamp(8px, 2vw, 14px) !important;
+}
+body.ox-body-public .pd-extra-option > span:first-child {
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px;
+}
+body.ox-body-public .pd-extra-option > span:first-child strong {
+  font-size: clamp(.82rem, .76rem + .35vw, .95rem) !important;
+  font-weight: 800 !important;
+  overflow-wrap: anywhere !important;
+  line-height: 1.3 !important;
+}
+body.ox-body-public .pd-extra-option > span:first-child small {
+  font-size: clamp(.7rem, .66rem + .25vw, .78rem) !important;
+  color: color-mix(in srgb, var(--brand-primary) 82%, #000) !important;
+  font-weight: 900 !important;
+}
+
+/* Contenedor tarjeta pd-card: previene overflow en móvil */
+body.ox-body-public .pd-card {
+  overflow: hidden !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
 /* ══ PANTALLAS MUY PEQUEÑAS (280-320px: iPhone 5s/SE 1st, Galaxy A03) ══ */
 @media (max-width: 320px) {
   body.ox-body-public .ep-card-body { padding: 8px 10px 10px !important; }
   body.ox-body-public .ep-card-name { font-size: .9rem !important; }
   body.ox-body-public .ep-card-desc { font-size: .72rem !important; -webkit-line-clamp: 1 !important; }
   body.ox-body-public .ep-card-price { font-size: 1rem !important; }
-  body.ox-body-public .ep-card-badges { right: 42px !important; top: 6px; left: 6px; gap: 2px !important; }
+  body.ox-body-public .ep-card-badges { gap: 2px !important; margin: 2px 0 4px !important; }
   body.ox-body-public .ep-cbadge { font-size: .55rem !important; padding: 2px 5px !important; }
   body.ox-body-public .ep-card-cart-qty { min-width: 24px !important; min-height: 24px !important; font-size: .75rem !important; top: 6px !important; right: 6px !important; }
   body.ox-body-public .ep-btn-add { width: 42px !important; height: 42px !important; min-width: 42px !important; min-height: 42px !important; }
@@ -1493,8 +1622,8 @@ body.ox-body-public .ep-card-footer {
     font-size: .78rem !important;
     padding: 0 12px !important;
   }
-  /* Badges overlay: reduce right para no chocar con cart-qty en 320px */
-  body.ox-body-public .ep-card-badges { right: 50px !important; gap: 3px; }
+  /* Badges in-flow compactos en móvil */
+  body.ox-body-public .ep-card-badges { gap: 3px !important; margin: 3px 0 5px !important; }
   body.ox-body-public .ep-cbadge { font-size: .58rem !important; padding: 2px 6px !important; }
   body.ox-body-public .ep-card-cart-qty {
     min-width: 28px; min-height: 28px;
@@ -1814,3 +1943,36 @@ body.ox-body-public .ox-bottom-nav {
     background: var(--theme-surface) !important;
   }
 }
+
+/* Mantener nombre, precio y acción dentro de la tarjeta en web y PWA.
+   El layout del componente debe conservarse incluso en 280–350px. */
+@media (max-width: 350px) {
+  :is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-card-desc {
+  -webkit-line-clamp: 2 !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.ep-btn-add, .ep-btn-detail, .ep-modal-close, .ep-modal-qty-btn) {
+  min-width: 44px !important;
+  min-height: 44px !important;
+}
+@media (max-width: 480px) {
+  body.ox-body-public .ep-modal-actions {
+    grid-template-columns: 120px minmax(0, 1fr) !important;
+  }
+}
+@media (max-width: 350px) {
+  body.ox-body-public .ep-modal-actions {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-btn-detail {
+  width: 100%;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-btn-detail::after { content: none; }
