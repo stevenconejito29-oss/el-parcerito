@@ -1464,6 +1464,109 @@ body.ox-body-public .pd-card {
   min-width: 0 !important;
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   PACK RESPONSIVE FINAL — marcas/tags carrito + botones con texto+precio
+   + barras de progreso + extras con overflow
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Tags del carrito (proveedor, alérgenos, fulfillment): wrap forzado.
+   `.cr-tag` tenía nowrap+ellipsis → "🤝 Socio: Panadería La Espiga" se
+   cortaba. Ahora wrap natural con font clamp. */
+body.ox-body-public .cr-tag,
+body.ox-body-public .cr-tag--partner,
+body.ox-body-public .cr-tag--fulfillment,
+body.ox-body-public .cr-tag--hipo,
+body.ox-body-public .cr-tag--alerg {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+  flex-shrink: 1 !important;
+  max-width: 100% !important;
+  font-size: clamp(.58rem, 1.3vw, .68rem) !important;
+  padding: 3px clamp(5px, 1.3vw, 8px) !important;
+  line-height: 1.3 !important;
+}
+
+/* Botones con texto+precio ("Añadir · €X.XX", "Añadir combo · €X.XX"):
+   con clamp de font-size + max-width + wrap para no romper. */
+body.ox-body-public .pd-add-btn,
+body.ox-body-public .cr-cta,
+body.ox-body-public #btn-confirmar,
+body.ox-body-public .ep-modal-add-btn {
+  font-size: clamp(.85rem, .78rem + .5vw, 1rem) !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  line-height: 1.25 !important;
+  padding-left: clamp(.65rem, 2vw, 1.25rem) !important;
+  padding-right: clamp(.65rem, 2vw, 1.25rem) !important;
+  overflow-wrap: anywhere;
+}
+
+/* Barra de progreso del combo (pd-combo-guide) — no rompe en small */
+body.ox-body-public .pd-combo-guide {
+  padding: clamp(.5rem, 1.8vw, .7rem) !important;
+  gap: clamp(.3rem, 1.2vw, .55rem) clamp(.4rem, 1.5vw, .65rem) !important;
+}
+body.ox-body-public .pd-combo-guide-eyebrow {
+  font-size: clamp(.55rem, 1.4vw, .65rem) !important;
+}
+body.ox-body-public .pd-combo-guide-copy strong {
+  font-size: clamp(.75rem, .68rem + .35vw, .88rem) !important;
+  overflow-wrap: anywhere;
+}
+body.ox-body-public .pd-combo-guide-step {
+  width: clamp(24px, 6vw, 32px) !important;
+  height: clamp(24px, 6vw, 32px) !important;
+  font-size: clamp(.6rem, 1.5vw, .72rem) !important;
+}
+body.ox-body-public .pd-combo-guide-track {
+  height: clamp(.32rem, 1vw, .46rem) !important;
+}
+
+/* Extra option en móvil pequeño (≤380px): pasa a columna vertical para que
+   nombre + precio + stepper no compitan por ancho en una sola línea. */
+@media (max-width: 380px) {
+  body.ox-body-public .pd-extra-option {
+    grid-template-columns: 1fr !important;
+    gap: 6px !important;
+  }
+  body.ox-body-public .pd-extra-option > span:first-child {
+    order: 1;
+  }
+  body.ox-body-public .pd-extra-option .pd-extra-stepper {
+    order: 2;
+    justify-self: end;
+  }
+}
+
+/* Barras de progreso genéricas — ancho fluido */
+body.ox-body-public :is(.progress-bar, .cr-progress, .pd-cstep-progress-bar) {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+/* Imágenes que a veces heredan width fijo del container */
+body.ox-body-public :is(.cr-item img, .cr-combo-row-img, .ep-card-img img,
+                       .pd-hero-img-el, .pd-combo-thumb img) {
+  max-width: 100% !important;
+  height: auto;
+}
+body.ox-body-public .cr-combo-row-img {
+  width: clamp(20px, 6vw, 32px) !important;
+  height: clamp(20px, 6vw, 32px) !important;
+}
+
+/* Contenedores raíz de las 3 vistas críticas: sin scroll horizontal nunca */
+body.ox-body-public :is(.cr-wrap, .checkout-layout, .pd-detail, .ep-page) {
+  overflow-x: clip !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
 /* ══ PANTALLAS MUY PEQUEÑAS (280-320px: iPhone 5s/SE 1st, Galaxy A03) ══ */
 @media (max-width: 320px) {
   body.ox-body-public .ep-card-body { padding: 8px 10px 10px !important; }
