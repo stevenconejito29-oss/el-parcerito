@@ -11,6 +11,10 @@
    • API / Admin: Network-only (nunca cachear dinámico)
    • Push Notifications: Muestra notificaciones + abre URL al click
    • v59: HTML y /uploads/ pasaron a network-first + fallback cache.
+   • v61 (2026-09-28): Bump forzado tras 12 deploys de UI polish para purgar
+     cachés del 25-sep. Cliente reporta que sigue viendo CSS viejo — este bump
+     activa `clients.claim()` inmediato y elimina todos los caches `ox-*` de
+     hashes anteriores.
    • v60 (2026-09-25): Liquid Glass — bump forzado para purgar caches viejos
      tras rediseño de tarjetas + modales. Los clientes con la PWA instalada
      verán la nueva versión al reabrir la app (nuevo SW se instala, activa,
