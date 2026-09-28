@@ -73,7 +73,8 @@ class CatalogProjectionTest(unittest.TestCase):
         db.session.flush()
         db.session.add_all([
             Stock(producto_id=product.id, cantidad=4),
-            ProductExtraOption(grupo_id=sauce_group.id, nombre="Ají", activo=True),
+            ProductExtraOption(grupo_id=sauce_group.id, nombre="Ají", precio=1.5, activo=True),
+            ProductExtraOption(grupo_id=sauce_group.id, nombre="Retirado", activo=False),
             ProductExtraOption(grupo_id=flavor_group.id, nombre="Mango", activo=True),
             ProductPresentation(
                 producto_id=product.id,
@@ -95,6 +96,11 @@ class CatalogProjectionTest(unittest.TestCase):
         self.assertEqual([p.tamaño for p in projection[product.id].presentations], ["grande"])
         self.assertTrue(projection[unlimited.id].available)
         self.assertEqual(float(projection[product.id].display_price), 6)
+        groups = projection[product.id].option_groups
+        self.assertEqual(groups[0]["options"], [{"name": "Ají", "price": 1.5}])
+        self.assertEqual(groups[1]["type"], "sabor")
+        self.assertEqual((groups[1]["minimum"], groups[1]["maximum"]), (1, 3))
+        self.assertEqual(projection[unlimited.id].option_groups, [])
 
     def test_combo_summary_preserves_included_items_and_choice_limits(self):
         component = Product(nombre='Incluido', precio=3, activo=True, stock_mostrar_en_web=False)

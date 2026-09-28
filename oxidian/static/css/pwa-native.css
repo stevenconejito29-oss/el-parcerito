@@ -1745,13 +1745,13 @@ html.ox-pwa-runtime body.ox-body-public .ep-card-desc {
 }
 html.ox-pwa-runtime body.ox-body-public .ep-card-highlights { gap:.22rem!important;max-height:26px!important;overflow:hidden!important; }
 html.ox-pwa-runtime body.ox-body-public .ep-card-highlight { min-height:22px!important;padding:.18rem .36rem!important;font-size:.55rem!important; }
-html.ox-pwa-runtime body.ox-body-public .ep-card-footer {
+html.ox-pwa-runtime body.ox-body-public .ep-card-footer:not(:has(.ep-btn-detail)) {
   grid-template-columns:minmax(0,1fr) 44px!important;
   gap:.3rem!important;
   padding-top:.48rem!important;
 }
 html.ox-pwa-runtime body.ox-body-public .ep-card-price { font-size:clamp(1rem,4.6vw,1.18rem)!important;line-height:1!important;white-space:nowrap!important; }
-html.ox-pwa-runtime body.ox-body-public .ep-card-footer>:is(.ep-btn-add,.ep-btn-detail,.ep-btn-sold) {
+html.ox-pwa-runtime body.ox-body-public .ep-card-footer>.ep-btn-add {
   width:44px!important;min-width:44px!important;height:44px!important;min-height:44px!important;padding:0!important;border-radius:.78rem!important;
   box-shadow:0 7px 14px color-mix(in srgb,var(--action-primary) 27%,transparent),inset 0 1px 0 rgba(255,255,255,.32)!important;
 }

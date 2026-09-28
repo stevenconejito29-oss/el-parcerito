@@ -4,15 +4,36 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
+  <meta name="ox-csrf-token" content="{{ csrf_token() }}">
+  <meta name="theme-color" content="{{ brand.color_primario }}">
+  {% if app_required %}
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="{{ url_for('customer_access.install_manifest') }}">
+  <link rel="apple-touch-icon" href="{{ brand.app_icon_url or url_for('static', filename='pwa-icon-192.png', v=asset_version) }}">
+  <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/private-install.js', v=asset_version) }}" defer></script>
+  {% endif %}
   <title>Acceso — {{ brand.nombre }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/customer-access.css', v=asset_version) }}">
 </head>
 <body class="ox-body-public" style="--brand-primary:{{ brand.color_primario }};--brand-on-primary:{{ brand.on_primario }}">
-<main class="customer-access">
+<main class="customer-access" data-app-required="{{ '1' if app_required else '0' }}" data-app-ready="{{ '1' if app_ready else '0' }}" data-app-url="{{ url_for('customer_access.open_app') }}">
+  {% if app_required %}
+  <section id="private-install">
+    <p>{{ brand.nombre }} · Acceso privado</p>
+    <h1>Tu tienda, en la app</h1>
+    <ol class="access-steps"><li>Instala la aplicación.</li><li>Ábrela desde su icono.</li><li>Verifica tu teléfono autorizado por WhatsApp.</li></ol>
+    <button id="private-install-button" type="button">Instalar aplicación</button>
+    <p id="private-install-status" role="status">El menú aparecerá después de abrir la app y verificar tu teléfono.</p>
+    <details id="private-install-help"><summary>Cómo instalar o abrir la app</summary><p>En iPhone: abre esta página en Safari, pulsa Compartir y Añadir a pantalla de inicio. En Android: usa Instalar aplicación o Añadir a pantalla de inicio en el menú del navegador. En ordenador: utiliza el icono de instalación de Chrome o Edge.</p><p>Si ya está instalada, ábrela desde el icono de {{ brand.nombre }}.</p></details>
+    <noscript>Activa JavaScript para detectar la aplicación y continuar.</noscript>
+  </section>
+  {% endif %}
+  <section id="private-verification" {% if app_required %}hidden{% endif %}>
   <p>{{ brand.nombre }}</p>
   <h1>{{ 'Revisa tu WhatsApp' if code_step else 'Tu tienda de confianza' }}</h1>
-  <p>{{ 'Si has recibido el código de acceso, introdúcelo aquí.' if code_step else 'Accede con tu teléfono registrado para ver la carta, hacer pedidos e instalar la aplicación.' }}</p>
+  <p>{{ 'Si has recibido el código de acceso, introdúcelo aquí.' if code_step else 'Accede con tu teléfono registrado para ver el menú y hacer pedidos.' }}</p>
   {% for category, message in get_flashed_messages(with_categories=true) %}<p role="status">{{ message }}</p>{% endfor %}
   <form method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -30,6 +51,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button name="action" value="restart" class="secondary">Cambiar teléfono o pedir otro código</button>
   </form>{% endif %}
+  </section>
   <p>El acceso está disponible para clientes registrados. Si aún no tienes acceso, contacta con la tienda.</p>
   {% if brand.telefono %}<a href="tel:{{ brand.telefono }}">Llamar a la tienda</a>{% endif %}
   <footer><a href="{{ url_for('public.informacion_legal') }}">Privacidad y condiciones</a><a href="{{ url_for('auth.login') }}">Acceso del equipo</a></footer>

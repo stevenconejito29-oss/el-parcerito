@@ -16,6 +16,8 @@ try {
   });
   await page.goto('http://tracking.test/');
   await page.setContent(`<main data-order-state-url="http://tracking.test/estado">
+    <div class="order-success-hero order-success-hero--action"></div>
+    <section class="order-notify-card">Avisos</section>
     <h1 data-order-title></h1><p data-order-description></p><span data-order-status></span>
     <span data-order-connection></span><span data-order-eyebrow></span><span data-order-validation></span>
     <section class="order-verification-alert">Confirma</section>
@@ -29,6 +31,8 @@ try {
   await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
   await page.waitForFunction(()=>document.querySelector('[data-order-title]').textContent==='Listo para recoger');
   assert.equal(await page.locator('.order-verification-alert').isVisible(),false);
+  assert.equal(await page.locator('.order-success-hero--action').count(),0);
+  assert.equal(await page.locator('.order-success-hero--complete').count(),1);
   assert.equal(await page.locator('[data-order-progress]').getAttribute('data-order-progress'),'3');
   assert.equal(await page.locator('[data-order-payment-instructions]').isVisible(),false);
   assert.equal(await page.locator('[data-order-payment-status]').textContent(),'Pago confirmado');
@@ -46,5 +50,10 @@ try {
   release();
   await page.waitForFunction(()=>document.querySelector('[data-order-connection]').textContent.includes('Sin actualizar'));
   assert.equal(await page.locator('[data-order-title]').textContent(),'Listo para recoger');
+  failed = false;
+  state = {...state, active:false, status:'entregado', presentation:{...state.presentation,title:'Pedido recogido',stage:4}};
+  await page.evaluate(()=>window.dispatchEvent(new Event('pageshow')));
+  await page.waitForFunction(()=>document.querySelector('[data-order-title]').textContent==='Pedido recogido');
+  assert.equal(await page.locator('.order-notify-card').isVisible(),false);
   console.log('OK: confirmación, pago, recogida, consultas serializadas y pérdida de conexión.');
 } finally { await browser.close(); }

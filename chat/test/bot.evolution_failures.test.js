@@ -145,3 +145,22 @@ test('error de red genérico no lanza — devuelve false', async () => {
   assert.equal(ok, false);
   assert.equal(_fetchCalls, 3);
 });
+
+test('una pausa 429 bloquea también mensajes ya encolados', async () => {
+  _fetchCalls=0;
+  const previousFetch=globalThis.fetch;
+  globalThis.fetch=async () => {
+    _fetchCalls++;
+    await new Promise(resolve=>setTimeout(resolve,20));
+    return new Response('{}',{status:429,headers:{'Retry-After':'60'}});
+  };
+  try {
+    const results=await Promise.all([
+      _sendText('34600000031@s.whatsapp.net','confirmación QA A',{transactional:true,humanize:false}),
+      _sendText('34600000032@s.whatsapp.net','confirmación QA B',{transactional:true,humanize:false}),
+      _sendText('34600000033@s.whatsapp.net','confirmación QA C',{transactional:true,humanize:false}),
+    ]);
+    assert.deepEqual(results,[false,false,false]);
+    assert.equal(_fetchCalls,1,'la cola respeta la pausa antes de llamar al proveedor');
+  } finally {globalThis.fetch=previousFetch;}
+});

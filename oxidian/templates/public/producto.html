@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from 'partials/heritage_icons.html' import heritage_icon, loyalty_icon %}
 {% block title %}{{ producto.nombre }} — {{ brand.nombre }}{% endblock %}
-{% block styles %}
+{% block styles_components %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-product-detail.css', v=asset_version) }}">
 {% endblock %}
 {% block content %}
@@ -278,7 +278,7 @@
   (function(){
     const opts = document.querySelectorAll('.pd-tallas-opt');
     const priceEl = document.getElementById('pd-unit-price');
-    const basePrice = {{ producto.precio_final|float }};
+    const basePrice = {{ producto.precio_base_venta|float }};
     opts.forEach(opt => {
       const radio = opt.querySelector('input');
       radio?.addEventListener('change', () => {
@@ -293,14 +293,14 @@
   {% endif %}
 
   <div class="pd-price-row">
-    <span class="pd-price" id="pd-unit-price">€{{ "%.2f"|format(producto.precio_final) }}</span>
+    <span class="pd-price" id="pd-unit-price">€{{ "%.2f"|format(producto.precio_base_venta) }}</span>
     {% if _tallas_producto and _tallas_producto|length == 1 %}
     <span class="pd-size-chip" title="Presentación única">📏 {{ _tallas_producto[0].label }}</span>
     {% endif %}
     {% if producto.es_combo and producto.combo_precio_modo_normalizado == 'descuento_porcentaje' and producto.combo_descuento_pct_float > 0 %}
     <span class="pd-combo-price-note">
       {{ "%.0f"|format(producto.combo_descuento_pct_float) }}% dto sobre tu selección
-      {% if producto.combo_precio_base|float > producto.precio_final|float %}
+      {% if producto.combo_precio_base|float > producto.precio_base_venta|float %}
       <span>Antes €{{ "%.2f"|format(producto.combo_precio_base) }}</span>
       {% endif %}
     </span>
@@ -827,7 +827,7 @@
     {% endif %}
 
     <button type="submit" class="pd-add-btn" id="pd-add-btn">
-      {% if producto.es_combo %}Añadir combo{% elif producto.tipo_entrega in ('programado','encargo') %}Reservar fecha fija{% else %}Añadir{% endif %} · €{{ "%.2f"|format(producto.precio_final) }}
+      {% if producto.es_combo %}Añadir combo{% elif producto.tipo_entrega in ('programado','encargo') %}Reservar fecha fija{% else %}Añadir{% endif %} · €{{ "%.2f"|format(producto.precio_base_venta) }}
     </button>
     {# Hint: sólo aparece cuando hay al menos DOS tamaños o hay sabores;
        si el producto tiene 1 tamaño y ningún sabor no aporta nada útil.
@@ -2005,7 +2005,7 @@ main { padding-top: 0 !important; }
 </style>
 
 <script nonce="{{ csp_nonce() }}">
-const PD_BASE_PRICE = {{ producto.precio_final|float }};
+const PD_BASE_PRICE = {{ producto.precio_base_venta|float }};
 const PD_COMBO_MODE = {{ (producto.combo_precio_modo_normalizado if producto.es_combo else 'fijo')|tojson }};
 const PD_COMBO_DISCOUNT = {{ producto.combo_descuento_pct_float if producto.es_combo else 0 }};
 const PD_COMBO_FIXED_BASE = {{ combo_fixed_base|default(0)|float }};

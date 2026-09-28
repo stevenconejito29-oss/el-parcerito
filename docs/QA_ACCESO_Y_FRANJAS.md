@@ -8,8 +8,11 @@ ambos guardan la misma configuración y exigen permiso de superadmin.
 
 1. En Clientes, registrar un teléfono o autorizar un cliente existente.
 2. Activar «Tienda privada» en el panel principal de superadmin.
-3. Desde un navegador de cliente, solicitar el código e introducirlo. El menú,
-   las APIs del catálogo y el manifiesto quedan bloqueados antes de verificar.
+3. En Ajustes → Acceso de clientes, elegir si se exige abrir la app. Con esa
+   opción, el navegador solo muestra la instalación; al abrir la app se solicita
+   el teléfono y el código. El menú y las APIs del catálogo siguen bloqueados
+   antes de verificar. El manifiesto de instalación `/acceso/manifest.webmanifest`
+   solo contiene marca e iconos, sin catálogo ni enlaces internos.
 4. Si la sesión caduca, verificar otra vez desde el navegador vinculado. La
    identidad persistente no equivale a una sesión autorizada. Si se borran todas
    las cookies o se usa otro perfil de navegador, superadmin debe restablecer
@@ -55,3 +58,28 @@ relaciones huérfanas. `combo_audit.audit_combo` comprueba los grupos, component
 modalidades, tamaños y sabores del combo existente. La prueba de finanzas
 `seed_finance_stress.py` usa exclusivamente una base QA y verifica ingresos,
 comisiones, cancelaciones y snapshots de zonas en 400 pedidos sintéticos.
+
+## Instalación antes de verificar
+
+Reiniciar el servidor QA y ejecutar `node scripts/review_private_install.mjs`
+ desde `oxidian/`. Comprueba el selector de superadmin, pantalla a 320 px, iconos,
+OTP, protección de APIs, pestaña normal con cookies compartidas y vuelta a público.
+La prueba simula `display-mode`/`navigator.standalone`; no instala físicamente.
+
+`ACCESO_REQUIERE_PWA` solo actúa con tienda privada. La detección de instalación
+es una señal de interfaz manipulable, no una credencial ni una atestación del
+dispositivo. La seguridad depende de autorización explícita, OTP y cookie firmada
+vinculada al teléfono. En iOS se verifica después de instalar porque la app puede
+tener almacenamiento separado de Safari. Cambiar de dispositivo exige restablecer
+el vínculo desde Clientes. Nunca se autoriza a todos los clientes por activar el modo.
+
+## Ritmo de WhatsApp
+
+Las variables `BOT_READ_RECEIPT_MIN_MS/MAX_MS` ajustan cuándo marcar leído.
+`BOT_READING_*`, `BOT_HUMANIZE_*` y `BOT_FIRST_TOUCH_*` regulan las pausas
+antes de contestar; se validan y acotan al arrancar. Valores inválidos recuperan
+el valor por defecto. Los OTP y confirmaciones evitan las pausas de escritura,
+pero conservan límites globales, deduplicación y la pausa del proveedor. Un
+HTTP 429 detiene también los envíos que ya estaban en cola. Las pausas no
+garantizan evitar restricciones de WhatsApp. La recepción real requiere prueba
+con un teléfono autorizado; no se enviaron mensajes a clientes en QA.

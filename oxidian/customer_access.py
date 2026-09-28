@@ -16,7 +16,7 @@ def private_pwa_required():
 
 
 def customer_grant(customer, lock=False):
-    if not customer or customer.rol != 'cliente' or not customer.activo:
+    if not customer or not customer.activo:
         return None
     query = CustomerAccessGrant.query.filter_by(user_id=customer.id, activo=True)
     if lock:

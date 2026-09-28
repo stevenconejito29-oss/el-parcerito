@@ -10,6 +10,7 @@ Cubren el fix de la Fase 1 de seguridad:
 """
 import re
 import unittest
+from unittest.mock import patch
 
 from flask import Flask
 
@@ -25,7 +26,9 @@ class SecurityHeadersTest(unittest.TestCase):
         import os
         os.environ.setdefault("OXIDIAN_SKIP_STARTUP_DB", "1")
         os.environ.setdefault("FLASK_ENV", "testing")
-        cls.app = create_app()
+        # SQLAlchemy crea el motor en init_app: cambiar la URI después llega tarde.
+        with patch('config.DevelopmentConfig.SQLALCHEMY_DATABASE_URI', 'sqlite://'):
+            cls.app = create_app()
         cls.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False,
                               SQLALCHEMY_DATABASE_URI="sqlite://")
         with cls.app.app_context():
@@ -145,7 +148,8 @@ class NonceInjectionTest(unittest.TestCase):
     def setUpClass(cls):
         import os
         os.environ.setdefault("OXIDIAN_SKIP_STARTUP_DB", "1")
-        cls.app = create_app()
+        with patch('config.DevelopmentConfig.SQLALCHEMY_DATABASE_URI', 'sqlite://'):
+            cls.app = create_app()
         cls.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False,
                               SQLALCHEMY_DATABASE_URI="sqlite://")
         with cls.app.app_context():

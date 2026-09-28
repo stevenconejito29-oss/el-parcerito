@@ -262,13 +262,13 @@
       toast('Podrás activar avisos de seguimiento al confirmar tu primer pedido.', 'info');
       return;
     }
-    if (!window.isSecureContext || !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
-      toast('Este navegador no admite Web Push. Usa la versión reciente de Safari, Chrome o Edge mediante HTTPS.', 'warning', null, 8000);
-      return;
-    }
     if (isIOS && !isStandalone()) {
       showInstallSheet({ force: true });
       toast('En iPhone, instala primero la app en la pantalla de inicio y actívala desde allí.', 'info', null, 8000);
+      return;
+    }
+    if (!window.isSecureContext || !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+      toast('Este navegador no admite Web Push. Usa la versión reciente de Safari, Chrome o Edge mediante HTTPS.', 'warning', null, 8000);
       return;
     }
     if (Notification.permission === 'denied') {
@@ -277,9 +277,10 @@
       return;
     }
 
-    const original = button.textContent;
+    const buttonLabel = button.querySelector('span') || button;
+    const original = buttonLabel.textContent;
     button.disabled = true;
-    button.textContent = 'Activando…';
+    buttonLabel.textContent = 'Activando…';
     try {
       unlockAudio();
       const permission = Notification.permission === 'granted'
@@ -299,11 +300,20 @@
       toast(error.message || 'No se pudieron activar los avisos.', 'danger', null, 9000);
     } finally {
       button.disabled = false;
-      if (button.isConnected && button.textContent === 'Activando…') button.textContent = original;
+      if (button.isConnected && buttonLabel.textContent === 'Activando…') buttonLabel.textContent = original;
     }
   }
 
   function setPushUi(state, detail = '') {
+    // El ticket y el chat pueden mostrar controles sin el banner global.
+    document.querySelectorAll('[data-push-activate], [data-push-enable]').forEach(item => {
+      item.setAttribute('aria-pressed', state === 'active' ? 'true' : 'false');
+      const label = state === 'active' ? 'Avisos activos' : state === 'denied' ? 'Avisos bloqueados' : state === 'error' ? 'Reintentar avisos' : 'Activar avisos';
+      const copy = item.querySelector('span');
+      if (copy) copy.textContent = label;
+      else item.textContent = label;
+      item.setAttribute('aria-label', label);
+    });
     const prompt = document.getElementById('ox-push-prompt');
     const banner = document.getElementById('ox-push-banner');
     const root = prompt || banner;
@@ -313,10 +323,6 @@
     const button = root.querySelector('[data-push-activate], [data-push-enable]');
     if (state === 'active') {
       root.hidden = true;
-      document.querySelectorAll('[data-push-activate], [data-push-enable]').forEach(item => {
-        item.textContent = 'Avisos activos';
-        item.setAttribute('aria-pressed', 'true');
-      });
       return;
     }
     root.hidden = false;

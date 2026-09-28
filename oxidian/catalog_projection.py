@@ -42,6 +42,7 @@ class CatalogProductView:
     presentations: list = field(default_factory=list)
     combo_items: list = field(default_factory=list)
     combo_choices: list = field(default_factory=list)
+    option_groups: list = field(default_factory=list)
     display_price: Decimal = Decimal("0.00")
     rating: float = 0.0
 
@@ -153,6 +154,19 @@ def build_catalog_projection(products, origin="propio"):
         )
         .all()
     )
+    option_summaries = defaultdict(list)
+    summaries_by_group = {}
+    for group, option in (db.session.query(ProductExtraGroup, ProductExtraOption)
+                         .join(ProductExtraOption, ProductExtraOption.grupo_id == ProductExtraGroup.id)
+                         .filter(ProductExtraGroup.producto_id.in_(product_ids),
+                                 ProductExtraGroup.activo.is_(True), ProductExtraOption.activo.is_(True))
+                         .order_by(ProductExtraGroup.orden, ProductExtraGroup.id, ProductExtraOption.orden, ProductExtraOption.id).all()):
+        if group.id not in summaries_by_group:
+            summary = {"name": group.nombre, "type": group.tipo, "minimum": int(group.min_selecciones or 0),
+                       "maximum": int(group.max_selecciones or 1), "options": []}
+            summaries_by_group[group.id] = summary
+            option_summaries[group.producto_id].append(summary)
+        summaries_by_group[group.id]["options"].append({"name": option.nombre, "price": float(option.precio or 0)})
     extras_ids = {row.producto_id for row in option_group_rows}
     flavor_ids = {
         row.producto_id for row in option_group_rows if row.tipo == "sabor"
@@ -306,6 +320,7 @@ def build_catalog_projection(products, origin="propio"):
             presentations=product_presentations,
             combo_items=visible_items,
             combo_choices=choices,
+            option_groups=option_summaries.get(product.id, []),
             display_price=display_price,
             rating=ratings.get(product.id, 0.0),
         )

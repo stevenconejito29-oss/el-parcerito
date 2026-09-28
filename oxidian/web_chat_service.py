@@ -53,7 +53,7 @@ _INTENT_TERMS = {
     "coupons": {"cupon", "cupones", "descuento", "descuentos", "promocion", "promociones", "oferta"},
     "changes": {"cambiar", "cambio", "modificar", "editar", "direccion", "nota", "sabor", "tamano"},
     "availability": {"disponible", "disponibilidad", "agotado", "stock", "queda", "quedan"},
-    "receipt": {"ticket", "recibo", "factura", "comprobante", "numero"},
+    "receipt": {"ticket", "tiket", "tiquet", "recibo", "factura", "comprobante", "numero"},
     "reorder": {"repetir", "recomprar", "pedirlo", "anterior", "ultima"},
 }
 
@@ -285,7 +285,7 @@ def visitor_order_answer(question: str) -> str | None:
     action = (
         "Puedes revisar el seguimiento o cancelar con los botones seguros que aparecen debajo."
         if order.estado == "pendiente" and not order.pago_confirmado
-        else "Puedes abrir «Ver estado» debajo para consultar el detalle actualizado."
+        else "Puedes abrir «Ver pedido y ticket» debajo para consultar el detalle actualizado."
     )
     return f"Tu pedido {order.numero_pedido} está {status}. Modalidad: {delivery}. {view['description']} {action}"
 
@@ -455,18 +455,18 @@ def _intent_answer(intent: str) -> str | None:
         # frontend los renderiza automáticamente debajo del mensaje.
         orders = visitor_orders()
         if orders:
-            n = len(orders)
-            plural = "s" if n != 1 else ""
+            tickets = "tu ticket digital" if len(orders) == 1 else "tus tickets digitales"
             return (
-                f"Aquí tienes tu{plural} ticket{plural} digital{plural} de pedido{plural} activo{plural} "
-                f"({n}). Pulsa «Ver estado» debajo para abrir el ticket completo con número, "
-                "productos, entrega y forma de pago. Puedes compartirlo si lo necesitas."
+                f"Aquí tienes {tickets}. Pulsa «Ver pedido y ticket» en la tarjeta del pedido "
+                "para consultar número, productos, entrega, forma de pago y total. "
+                "El estado se actualiza mientras el pedido sigue activo. "
+                "Ábrelo desde este dispositivo, donde hiciste la compra."
             )
         return (
             "Ahora mismo no tengo pedidos activos en este dispositivo. "
             "Cuando hagas una compra, recibirás una ficha con número de pedido, "
             "productos, cantidades, entrega, forma de pago y total. "
-            "Ese número identifica tu compra; desde «Ver estado» puedes volver a consultar "
+            "Ese número identifica tu compra; desde «Ver pedido y ticket» puedes volver a consultar "
             "la ficha en este dispositivo."
         )
     if intent == "reorder":

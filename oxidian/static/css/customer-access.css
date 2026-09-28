@@ -12,3 +12,13 @@
 .customer-access :is(h1,p,a,button,label) { overflow-wrap:anywhere; white-space:normal; line-height:1.5; }
 .customer-access :is(input,button) { min-width:0; max-width:100%; min-height:44px; }
 .customer-access footer { flex-wrap:wrap; gap:12px; }
+
+.customer-access [hidden] { display:none !important; }
+.customer-access { background:#fff; border:1px solid #ddd8ca; border-radius:20px; box-shadow:0 12px 36px #172b3a0c; }
+.customer-access .access-steps { padding-left:1.4rem; margin:1.5rem 0; }
+.customer-access .access-steps li { padding:.45rem 0 .45rem .25rem; line-height:1.5; }
+.customer-access details { padding:1rem; border-radius:12px; background:#f5f3ee; color:#172b3a; }
+.customer-access summary { cursor:pointer; font-weight:700; line-height:1.5; }
+.customer-access :focus-visible { outline:3px solid #126b93; outline-offset:3px; }
+@media(max-width:480px) { .customer-access { margin:1rem .75rem; padding:1.25rem; } }
+body.ox-body-public main.customer-access { width:calc(100% - 1.5rem); max-width:28rem; margin:1.5rem auto; padding:1.25rem; }

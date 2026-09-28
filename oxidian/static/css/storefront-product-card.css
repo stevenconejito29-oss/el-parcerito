@@ -446,222 +446,6 @@ body.ox-body-public .ep-card.is-just-added {
   }
 }
 
-@media (max-width: 560px) and (orientation: portrait) {
-  body.ox-body-public .ep-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: .62rem;
-  }
-
-  body.ox-body-public .ep-card,
-  body.ox-body-public .ep-card-combo {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    border-radius: 1rem .38rem 1rem 1rem;
-  }
-
-  body.ox-body-public .ep-card .ep-card-img,
-  body.ox-body-public .ep-card-combo .ep-card-img {
-    width: 100%;
-    height: auto;
-    min-height: 0;
-    aspect-ratio: 1 / .9;
-    border-radius: .94rem .32rem 0 0;
-  }
-
-  body.ox-body-public .ep-card-image-contain .ep-card-img img {
-    padding: .36rem;
-    transform: scale(1.035);
-  }
-
-  body.ox-body-public .ep-card-body,
-  body.ox-body-public .ep-card-combo .ep-card-body {
-    flex: 1;
-    padding: .62rem;
-    gap: .28rem;
-  }
-
-  body.ox-body-public .ep-card-combo {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: minmax(132px, 42%) minmax(0, 1fr);
-    min-height: 210px;
-  }
-
-  body.ox-body-public .ep-card-combo .ep-card-img {
-    width: 100%;
-    height: 100%;
-    min-height: 210px;
-    aspect-ratio: auto;
-    border-radius: .94rem 0 0 .94rem;
-  }
-
-  body.ox-body-public .ep-card-combo .ep-card-desc { display: none; }
-  body.ox-body-public .ep-card-combo .ep-card-combo-panel { margin-top: .1rem; }
-  body.ox-body-public .ep-card-combo .ep-card-combo-line { font-size: .6rem; }
-
-  body.ox-body-public .ep-card-combo-overview {
-    margin-bottom: .34rem;
-  }
-
-  body.ox-body-public .ep-card-combo-thumb,
-  body.ox-body-public .ep-card-combo-more {
-    width: 29px;
-    height: 29px;
-    flex-basis: 29px;
-  }
-
-  body.ox-body-public .ep-card-desc {
-    min-height: 0;
-    font-size: .68rem;
-    line-height: 1.25;
-    -webkit-line-clamp: 2;
-  }
-
-  body.ox-body-public .ep-card-kicker-row { min-height: 1rem; }
-  body.ox-body-public .ep-card-kicker { font-size: .54rem; }
-  body.ox-body-public .ep-card-stock-mini { font-size: .5rem; }
-
-  body.ox-body-public .ep-card-name {
-    display: -webkit-box;
-    min-height: 2.1em;
-    overflow: hidden;
-    font-size: .9rem;
-    line-height: 1.08;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-  }
-
-  body.ox-body-public .ep-card-highlights {
-    display: none;
-  }
-
-  body.ox-body-public .ep-cbadge {
-    min-height: 20px;
-    padding: .2rem .36rem;
-    font-size: .52rem;
-  }
-
-  body.ox-body-public .ep-cbadge-fulfillment .ep-cbadge-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-  }
-
-  body.ox-body-public .ep-cbadge-fulfillment {
-    width: 25px;
-    min-height: 25px;
-    justify-content: center;
-    padding: 0;
-    border-radius: 50%;
-  }
-
-  body.ox-body-public .ep-card-footer {
-    align-items: end;
-    gap: .34rem .42rem;
-    margin-top: auto;
-    padding-top: .36rem;
-    border-top-width: 1px;
-  }
-
-  body.ox-body-public .ep-card-price {
-    font-size: 1.04rem;
-  }
-
-  body.ox-body-public .ep-btn-add {
-    width: 44px;
-    min-width: 44px;
-    min-height: 44px;
-    height: 44px;
-    padding-inline: 0;
-    border-radius: 50%;
-  }
-
-  body.ox-body-public .ep-btn-add-label {
-    display: none;
-  }
-
-  body.ox-body-public .ep-btn-detail {
-    width: 44px;
-    min-width: 44px;
-    height: 44px;
-    min-height: 44px;
-    padding: 0;
-    border-radius: 50%;
-    overflow: hidden;
-    font-size: 0;
-  }
-
-  body.ox-body-public .ep-btn-detail::after {
-    content: '+';
-    font-size: 1.25rem;
-    font-weight: 950;
-  }
-}
-
-@media (max-width: 420px) and (orientation: portrait) {
-  body.ox-body-public .ep-card:not(.ep-card-combo) .ep-card-desc { display: none; }
-}
-
-@media (max-width: 350px) and (orientation: portrait) {
-  body.ox-body-public .ep-grid { grid-template-columns: minmax(0, 1fr); }
-  body.ox-body-public .ep-card,
-  body.ox-body-public .ep-card-combo {
-    display: grid;
-    grid-template-columns: 110px minmax(0, 1fr);
-  }
-  body.ox-body-public .ep-card .ep-card-img,
-  body.ox-body-public .ep-card-combo .ep-card-img {
-    height: 100%;
-    aspect-ratio: auto;
-    border-radius: .94rem 0 0 .94rem;
-  }
-
-  body.ox-body-public .ep-cbadge-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-  }
-
-  body.ox-body-public .ep-card-cart-state {
-    font-size: .54rem;
-  }
-}
-
-@media (orientation: landscape) and (max-height: 500px) {
-  body.ox-body-public .ep-grid {
-    grid-template-columns: repeat(auto-fit, minmax(205px, 1fr));
-    gap: .7rem;
-  }
-  body.ox-body-public .ep-card,
-  body.ox-body-public .ep-card-combo {
-    border-radius: 1rem .4rem 1rem 1rem;
-  }
-  body.ox-body-public .ep-card-img,
-  body.ox-body-public .ep-card-combo .ep-card-img {
-    aspect-ratio: 16 / 9;
-  }
-  body.ox-body-public .ep-card-body,
-  body.ox-body-public .ep-card-combo .ep-card-body {
-    gap: .28rem;
-    padding: .62rem;
-  }
-  body.ox-body-public .ep-card-desc {
-    -webkit-line-clamp: 1;
-  }
-  body.ox-body-public .ep-card-footer {
-    margin-top: .2rem;
-  }
-}
-
-@media (max-width: 560px) and (orientation: portrait) {
-  body.ox-body-public .ep-card:active { transform: scale(.992); }
-}
-
 @media (prefers-reduced-motion: reduce) {
   body.ox-body-public .ep-card,
   body.ox-body-public .ep-card-img img {
@@ -671,4 +455,238 @@ body.ox-body-public .ep-card.is-just-added {
   body.ox-body-public .ep-card.is-just-added {
     animation: none;
   }
+}
+
+/* Contrato responsive del catálogo. Se carga después de las capas de tema:
+   el ancho real de cada tarjeta gobierna la lectura, también en la PWA. */
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)) !important;
+  gap: clamp(12px, 2vw, 20px) !important;
+  align-items: stretch;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card:not(.is-hidden):not([hidden]) {
+  display: flex !important;
+  flex-direction: column;
+  grid-column: auto;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  border-radius: 16px !important;
+  background: var(--theme-surface) !important;
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--theme-text) 10%, transparent) !important;
+  transform: none;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-img {
+  display: block;
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
+  height: auto;
+  min-height: 0 !important;
+  aspect-ratio: 4 / 3 !important;
+  border-radius: 0 !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-img > :is(img, .ep-card-img-emoji) {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  gap: 8px;
+  padding: 14px !important;
+  border: 0;
+  background: var(--theme-surface) !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-name {
+  display: block;
+  font-size: 1rem !important;
+  line-height: 1.4 !important;
+  font-weight: 750;
+  min-height: 0;
+  margin: 0 !important;
+  -webkit-line-clamp: unset !important;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: var(--theme-text) !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-desc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2 !important;
+  overflow: hidden;
+  min-height: 0;
+  margin: 0 !important;
+  font-size: .875rem !important;
+  line-height: 1.5 !important;
+  color: var(--theme-muted) !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-badges {
+  position: static;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  max-height: none;
+  overflow: visible;
+  pointer-events: auto;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-cbadge {
+  width: auto;
+  flex: 0 1 auto;
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding: 4px 7px !important;
+  font-size: .75rem !important;
+  line-height: 1.35;
+  color: var(--theme-text) !important;
+  background: var(--theme-surface-alt) !important;
+  border-radius: 8px;
+  box-shadow: none;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-cbadge-label {
+  position: static;
+  width: auto;
+  height: auto;
+  clip-path: none;
+  overflow: visible;
+  font-size: inherit;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid :is(.ep-card-kicker, .ep-card-stock-mini) {
+  font-size: .75rem !important;
+  letter-spacing: .02em !important;
+  white-space: normal;
+  color: var(--theme-muted) !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-highlights {
+  display: flex;
+  flex-wrap: wrap;
+  max-height: none !important;
+  overflow: visible !important;
+  gap: 6px !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-highlights:empty { display: none; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid :is(.ep-card-highlight, .ep-card-size-chip) {
+  height: auto;
+  min-height: 0 !important;
+  font-size: .75rem !important;
+  white-space: normal;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  grid-template-areas: "price action";
+  gap: 10px !important;
+  align-items: center;
+  margin-top: auto !important;
+  padding-top: 10px !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-footer:has(.ep-btn-detail, .ep-btn-sold) {
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-areas: "price" "action";
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-prices {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-price {
+  font-size: 1.1rem !important;
+  line-height: 1.4 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  color: var(--theme-text) !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-price-note {
+  font-size: .8rem;
+  line-height: 1.4;
+  white-space: normal;
+  color: var(--theme-muted);
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid :is(.ep-btn-detail, .ep-btn-sold) {
+  width: 100% !important;
+  min-height: 44px !important;
+  height: auto !important;
+  padding: 10px 12px !important;
+  border-radius: 10px !important;
+  font-size: .875rem !important;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-btn-detail::after { content: none; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-combo-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--col-border);
+  border-radius: 12px;
+  background: var(--theme-surface-alt) !important;
+  box-shadow: none !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid :is(.combo-included-list, .combo-included-list li, .combo-included-list strong, .ep-card-combo-copy) {
+  font-size: .875rem;
+  line-height: 1.5;
+  color: var(--theme-text);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-combo-label {
+  font-size: .75rem;
+  color: var(--theme-muted);
+  letter-spacing: .04em;
+}
+@media (max-width: 599px) {
+  :is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  :is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card:not(.ep-card-combo):not(.ep-card-configurable):not(.is-hidden):not([hidden]) {
+    display: grid !important;
+    grid-template-columns: minmax(76px, 27%) minmax(0, 1fr);
+    align-items: stretch;
+  }
+  :is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card:not(.ep-card-combo):not(.ep-card-configurable) .ep-card-img {
+    height: 100%;
+    aspect-ratio: auto !important;
+  }
+  :is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid :is(.ep-card-combo, .ep-card-configurable) .ep-card-img {
+    height: clamp(140px, 40vw, 200px);
+    aspect-ratio: auto !important;
+  }
+}
+
+/* El contador no es una capa de imagen: neutralizar los insets legacy. */
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-cart-qty {
+  position: absolute;
+  inset: 10px 10px auto auto !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: max-content !important;
+  height: 32px !important;
+  min-width: 32px !important;
+  min-height: 32px !important;
+  max-width: calc(100% - 20px);
+  padding: 0 8px !important;
+  border-radius: 999px;
+  font-size: .875rem !important;
+  line-height: 1;
+  white-space: nowrap;
+}
+/* El estado ya aparece junto al precio; la cinta duplicada tapaba la foto. */
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-in-cart::after {
+  content: none !important;
+  display: none !important;
 }

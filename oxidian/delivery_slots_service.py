@@ -406,6 +406,10 @@ def listar_franjas_cliente(
         .all()
     )
     modo_def, valor_def = _cierre_defaults()
+    # Cierre forzado global marca todas las franjas de hoy como cerradas para
+    # que el cliente vea coherencia entre banner de tienda cerrada y checkout.
+    from store_config import get_store_value
+    tienda_forzada_cerrada = str(get_store_value("TIENDA_FORZAR_CERRADA", "0")).lower() in ("1", "true", "yes", "on")
 
     # Precomputa "franja siguiente" para el modo al_iniciar_siguiente por si
     # en el futuro se usa esa lógica (hoy no la aplicamos aquí porque el
@@ -419,6 +423,10 @@ def listar_franjas_cliente(
             cierre_modo_default=modo_def,
             cierre_valor_default=valor_def,
         )
+        # Sólo cierra el mismo día: reservas futuras siguen viables aunque hoy
+        # esté forzada cerrada por un evento puntual.
+        if tienda_forzada_cerrada and slot.fecha == hoy:
+            cerrada = True
         llena = ocupados >= slot.capacidad_max
         disponible = not cerrada and not llena
         sugerida = disponible and not sugerida_marcada

@@ -3275,27 +3275,20 @@ def responder_confirmacion_pedido():
     from services import marcar_pedido_confirmado, cancelar_pedido_operativo
 
     data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict) or not isinstance(data.get("respuesta"), str):
+        return jsonify({"ok": False, "error": "Respuesta no válida"}), 400
     cliente, telefono = _cliente_por_telefono(data.get("telefono"))
     if not cliente or not telefono_valido(telefono):
         return jsonify({"ok": False, "error": "Cliente no encontrado"}), 404
 
     raw = str(data.get("respuesta") or "").strip().lower()
-    palabras_si = {"si", "sí", "s", "ok", "vale", "confirmo", "confirmar", "confirmado"}
+    palabras_si = {"si", "sí", "s", "ok", "vale", "confirmo", "confirmar", "confirmar pedido", "confirmado"}
     palabras_no = {"no", "n", "cancelo", "cancelar", "cancelado", "anular"}
-    # Tolerante a frases: el cliente puede escribir "sí confirmo" o
-    # "Hola, confirmo mi pedido" — buscamos palabras clave como PALABRA
-    # COMPLETA (regex \b), no solo match exacto. Evita el bug del ticket
-    # digital que enviaba una frase larga con "confirmo" incrustada.
-    import re as _re
-    def _tiene_palabra(texto: str, palabras: set) -> bool:
-        for p in palabras:
-            if _re.search(rf"\b{_re.escape(p)}\b", texto):
-                return True
-        return False
-
-    if _tiene_palabra(raw, palabras_si) and not _tiene_palabra(raw, palabras_no):
+    # Solo respuestas explícitas completas: «cómo cancelar» o «si llega
+    # mañana» son consultas, no consentimiento para cambiar el pedido.
+    if raw in palabras_si:
         accion = "confirmar"
-    elif _tiene_palabra(raw, palabras_no) and not _tiene_palabra(raw, palabras_si):
+    elif raw in palabras_no:
         accion = "cancelar"
     else:
         return jsonify({

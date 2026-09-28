@@ -1072,7 +1072,7 @@ def producto_detalle(producto_id):
             return redirect(url_for("public.menu_bar", proveedor_id=proveedor.id))
         return redirect(url_for("public.index"))
     reviews = Review.query.filter_by(producto_id=producto_id, aprobada=True).all()
-    combo_items = ComboItem.query.filter_by(combo_id=producto_id)\
+    combo_items = ComboItem.query.filter_by(combo_id=producto_id, activo=True)\
         .order_by(ComboItem.orden.asc(), ComboItem.id.asc()).all() if producto.es_combo else []
     combo_fixed_base = sum(
         float(item.componente.precio_final) * max(1, int(item.cantidad or 1))
@@ -3751,7 +3751,7 @@ def _parse_combo_selection(producto, form, cantidad=1, origen=None):
     if not producto.es_combo:
         return {}, None
 
-    componentes = ComboItem.query.filter_by(combo_id=producto.id)\
+    componentes = ComboItem.query.filter_by(combo_id=producto.id, activo=True)\
         .order_by(ComboItem.orden.asc(), ComboItem.id.asc()).all()
     seleccionables = [item for item in componentes if item.es_seleccionable]
     grupos = {}
@@ -4109,7 +4109,7 @@ def _combo_selection_payload(producto, seleccion_guardada):
     if not producto.es_combo:
         return [], "", {}
 
-    componentes = ComboItem.query.filter_by(combo_id=producto.id)\
+    componentes = ComboItem.query.filter_by(combo_id=producto.id, activo=True)\
         .order_by(ComboItem.orden.asc(), ComboItem.id.asc()).all()
     fijos = [item for item in componentes if not item.es_seleccionable]
     seleccionables = [item for item in componentes if item.es_seleccionable]

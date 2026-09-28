@@ -189,7 +189,27 @@ test('confirmar la primera compra limpia acciones antiguas y ofrece el siguiente
   assert.deepEqual(getSesion(clientJid).pending, {});
   const sent = db.prepare(`SELECT detalle FROM logs WHERE evento='send_attempt' ORDER BY id DESC LIMIT 1`).get();
   assert.match(sent.detalle, /confirmado/i);
-  assert.match(sent.detalle, /Escribe \*2\*/i);
+  assert.match(sent.detalle, /ticket y estado/i);
+  assert.doesNotMatch(sent.detalle, /Escribe \*2\*|\*MENU\*/i);
+});
+
+test('una duda no confirma ni cancela la primera compra', async () => {
+  for (const question of ['si llega mañana', '¿cómo puedo cancelar?', 'no sé', 'no quiero cancelar']) {
+    saveSesion({jid:clientJid,nombre:'Cliente',role:'client',estado:'main_menu',pending:{}});
+    await handleMessage(clientJid, question, 'Cliente');
+  }
+  assert.equal(calls.some(c => c.route === '/confirmacion/responder'), false);
+});
+
+test('fallo de confirmación informa del reintento sin anunciar éxito', async () => {
+  const fetchOk = global.fetch;
+  global.fetch = (url, options) => String(url).includes('/confirmacion/responder')
+    ? Promise.resolve(jsonResponse({ok:false}, 503)) : fetchOk(url, options);
+  saveSesion({jid:clientJid,nombre:'Cliente',role:'client',estado:'main_menu',pending:{}});
+  await handleMessage(clientJid, 'si', 'Cliente');
+  const sent = db.prepare("SELECT detalle FROM logs WHERE evento='send_attempt' ORDER BY id DESC LIMIT 1").get();
+  assert.match(sent.detalle, /No hemos podido comprobar/);
+  assert.doesNotMatch(sent.detalle, /Pedido .* confirmado/);
 });
 
 test('reconoce preguntas naturales sobre entrega y repartidor como estado de pedido', () => {

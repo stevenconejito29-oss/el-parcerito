@@ -143,7 +143,9 @@ body.ox-body-public .ep-card-badges .ep-cbadge {
 /* Badge cantidad en carrito top-right — círculo brand llamativo */
 body.ox-body-public .ep-card-cart-qty {
   position: absolute;
-  top: 10px; right: 10px;
+  inset: 10px 10px auto auto;
+  width: max-content;
+  height: 32px;
   min-width: 32px; min-height: 32px;
   padding: 0 8px;
   border-radius: 999px;
@@ -1599,9 +1601,8 @@ body.ox-body-public .pd-combo-guide-copy strong {
   overflow-wrap: anywhere;
 }
 body.ox-body-public .pd-combo-guide-step {
-  width: clamp(24px, 6vw, 32px) !important;
-  height: clamp(24px, 6vw, 32px) !important;
-  font-size: clamp(.6rem, 1.5vw, .72rem) !important;
+  min-height: 44px;
+  font-size: .875rem;
 }
 body.ox-body-public .pd-combo-guide-track {
   height: clamp(.32rem, 1vw, .46rem) !important;

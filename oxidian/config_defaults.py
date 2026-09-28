@@ -19,6 +19,10 @@ DEFAULTS: dict[str, dict] = {
         "default": "0", "type": "bool",
         "desc": "Exige teléfono de cliente activo y verificación para acceder a la tienda.",
     },
+    "ACCESO_REQUIERE_PWA": {
+        "default": "0", "type": "bool",
+        "desc": "En tienda privada, guía al cliente a instalar y abrir la app antes de verificar.",
+    },
     # ── Lanzamiento público ───────────────────────────────────────────
     "PREAPERTURA_ACTIVA": {
         "default": "0",

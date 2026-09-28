@@ -465,7 +465,7 @@ def get_store_profile() -> dict:
 # ofrezca cambiar SiteConfig debe consultar este set antes de aceptar el
 # cambio bajo un rol admin.
 LOCKED_CONFIG_KEYS = frozenset({
-    "ACCESO_CLIENTES_REGISTRADOS",
+    "ACCESO_CLIENTES_REGISTRADOS", "ACCESO_REQUIERE_PWA",
     # Modo comercial y comisiones
     "MODO_TIENDA",
     "SERVICE_COMMISSION_PCT",

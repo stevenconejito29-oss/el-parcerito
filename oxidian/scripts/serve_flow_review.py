@@ -48,7 +48,36 @@ with app.app_context():
     ])
     db.session.commit()
     Path('/tmp/parcerito-flow-qa-combo').write_text(str(combo.id))
-app.config.update(WTF_CSRF_ENABLED=True, SESSION_COOKIE_SECURE=False)
+    if os.environ.get('REVIEW_RICH_CATALOG') == '1':
+        from models import ProductPresentation
+        flavors.nombre = 'Elige tus sabores favoritos para combinar'
+        mango.nombre = 'Mango maduro con maracuyá y un nombre de sabor largo'
+        ProductExtraOption.query.filter_by(nombre='Queso QA').one().nombre = 'Extra de queso artesanal con un nombre largo'
+        detailed = Product(nombre='Combo familiar con empanadas artesanas, acompañamientos y bebidas para compartir',
+                           descripcion='Incluye la base indicada y permite elegir las bebidas. Revisa los suplementos antes de añadir.',
+                           precio=99, combo_precio_base=17.5, es_combo=True, activo=True,
+                           imagen_url='/static/pwa-icon-512.png')
+        sized = Product(nombre='Bebida natural en varios tamaños con un nombre largo', precio=5, activo=True,
+                        descripcion='Elige tamaño y revisa el precio final antes de añadir a tu canasta.')
+        sold = Product(nombre='Producto temporalmente agotado', precio=1234.56, activo=True, stock_mostrar_en_web=True)
+        db.session.add_all([detailed,sized,sold]); db.session.flush()
+        db.session.add_all([Stock(producto_id=sized.id,cantidad=20), Stock(producto_id=sold.id,cantidad=0),
+                           ProductPresentation(producto_id=sized.id,tamaño='pequeño',precio_extra=-1,activo=True),
+                           ProductPresentation(producto_id=sized.id,tamaño='grande',precio_extra=2,activo=True)])
+        choices = ComboGroup(combo_id=detailed.id,nombre='Bebidas para compartir',tipo='seleccion',min_selecciones=2,max_selecciones=3)
+        db.session.add(choices); db.session.flush()
+        for index in range(4):
+            component = Product(nombre=f'Incluido {index+1}: acompañamiento artesanal con nombre largo',precio=2,activo=True)
+            db.session.add(component); db.session.flush()
+            db.session.add_all([Stock(producto_id=component.id,cantidad=50),ComboItem(combo_id=detailed.id,producto_id=component.id,cantidad=index+1,activo=True,es_seleccionable=False)])
+        removed = Product(nombre='NO MOSTRAR componente retirado',precio=1,activo=False)
+        db.session.add(removed);db.session.flush()
+        db.session.add_all([
+            ComboItem(combo_id=detailed.id,producto_id=removed.id,cantidad=1,activo=False,es_seleccionable=False),
+            ComboItem(combo_id=detailed.id,producto_id=drink.id,cantidad=1,combo_group_id=choices.id,grupo_seleccion=choices.nombre,max_selecciones=3,es_seleccionable=True,activo=True),
+        ])
+        db.session.commit()
+app.config.update(WTF_CSRF_ENABLED=True, SESSION_COOKIE_SECURE=False, BOT_API_KEY='qa-flow-only')
 
 def capture_otp(phone, message, **kwargs):
     code = re.search(r'\*(\d{6})\*', message)
@@ -58,4 +87,4 @@ def capture_otp(phone, message, **kwargs):
 
 if __name__ == '__main__':
     with patch('services.enviar_whatsapp_generico', side_effect=capture_otp):
-        app.run(host='127.0.0.1', port=5079, debug=False, use_reloader=False, threaded=False)
+        app.run(host='127.0.0.1', port=int(os.environ.get('REVIEW_PORT', '5079')), debug=False, use_reloader=False, threaded=False)

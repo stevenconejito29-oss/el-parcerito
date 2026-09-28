@@ -16,7 +16,7 @@ class AssetVersionTest(unittest.TestCase):
             script = static_root / "js" / "features" / "navigation.js"
             script.write_text("export {};", encoding="utf-8")
             (static_root / "sw.js").write_text("const CACHE = 1;", encoding="utf-8")
-            app = SimpleNamespace(static_folder=str(static_root))
+            app = SimpleNamespace(static_folder=str(static_root), root_path=temp_dir)
 
             initial = _asset_version(app)
             script.write_text("export const ready = true;", encoding="utf-8")
@@ -30,13 +30,25 @@ class AssetVersionTest(unittest.TestCase):
             (static_root / "js").mkdir()
             (static_root / "css" / "base.css").write_text("body{}", encoding="utf-8")
             (static_root / "sw.js").write_text("const CACHE = 1;", encoding="utf-8")
-            app = SimpleNamespace(static_folder=str(static_root))
+            app = SimpleNamespace(static_folder=str(static_root), root_path=temp_dir)
 
             initial = _asset_version(app)
             (static_root / "uploads").mkdir()
             (static_root / "uploads" / "photo.jpg").write_bytes(b"runtime image")
 
             self.assertEqual(initial, _asset_version(app))
+
+    def test_template_change_invalidates_installed_pwa(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / 'static').mkdir()
+            (root / 'templates').mkdir()
+            ticket = root / 'templates' / 'ticket.html'
+            ticket.write_text('Pendiente', encoding='utf-8')
+            app = SimpleNamespace(static_folder=str(root / 'static'), root_path=temp_dir)
+            initial = _asset_version(app)
+            ticket.write_text('Confirmar por WhatsApp', encoding='utf-8')
+            self.assertNotEqual(initial, _asset_version(app))
 
 
 if __name__ == "__main__":

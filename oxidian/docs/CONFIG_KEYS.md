@@ -146,3 +146,10 @@ mediante OTP de WhatsApp. Vincula un navegador por cliente; superadmin puede
 restablecer el dispositivo. No crea clientes desde el acceso. Se administra en
 Configuración → Operación y usa el panel de Clientes para altas y bloqueos.
 Los pedidos existentes conservan su autorización de seguimiento independiente.
+
+## Acceso privado
+
+| Clave | Tipo | Default | Uso |
+|---|---|---|---|
+| `ACCESO_CLIENTES_REGISTRADOS` | bool | `0` | Superadmin exige autorización explícita y OTP WhatsApp para catálogo y pedidos. |
+| `ACCESO_REQUIERE_PWA` | bool | `0` | Con tienda privada guía instalación → apertura de app → verificación. La señal de instalación no sustituye la autorización del servidor. |

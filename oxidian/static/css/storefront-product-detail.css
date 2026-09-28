@@ -232,13 +232,26 @@ body.ox-body-public .pd-cstep {
 }
 
 body.ox-body-public .pd-cstep-hd {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
   min-height: 3.2rem;
   padding: .55rem .65rem;
   cursor: pointer;
   user-select: none;
 }
 
+body.ox-body-public .pd-cstep-meta { grid-column: 2; }
+body.ox-body-public .pd-cstep-badge {
+  grid-column: 2;
+  justify-self: start;
+  max-width: 100%;
+  white-space: normal;
+}
+
 body.ox-body-public .pd-cstep-hd::after {
+  grid-column: 3;
+  grid-row: 1;
   content: "⌄";
   width: 1.5rem;
   height: 1.5rem;
@@ -538,4 +551,158 @@ body.ox-body-public .pd-cstep-next.is-finish {
   body.ox-body-public .pd-cstep-hd::after {
     transition: none;
   }
+}
+
+/* Progreso y personalización: el texto define el alto, nunca una burbuja fija. */
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-guide {
+  position: static;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "copy" "track" "steps";
+  box-sizing: border-box;
+  padding: 1rem !important;
+  gap: .75rem !important;
+  background: var(--theme-surface);
+  border-radius: 1rem;
+  box-shadow: none;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-guide-copy strong {
+  font-size: 1rem !important;
+  line-height: 1.4;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-guide-eyebrow {
+  font-size: .75rem !important;
+  margin-bottom: .2rem;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-guide-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  min-width: 0;
+  width: 100%;
+  max-width: none;
+  overflow: visible;
+  gap: .5rem;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-guide-step {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  height: auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: .7rem .8rem;
+  border-radius: .7rem;
+  font-size: .875rem !important;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+  background: var(--theme-surface-alt);
+  color: var(--theme-text);
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-guide-step[aria-current="step"] {
+  border-color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 12%, var(--theme-surface));
+  color: var(--theme-text);
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-guide-step.is-complete {
+  background: color-mix(in srgb, var(--theme-success) 12%, var(--theme-surface));
+  color: var(--theme-text);
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.pd-extras, .pd-extra-group, .pd-extra-group legend, .pd-combo-item, .pd-combo-opt) {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-extra-group legend {
+  white-space: normal;
+  font-size: 1rem;
+  line-height: 1.45;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-extra-group legend small {
+  display: block;
+  font-size: .875rem;
+  font-weight: 400;
+  line-height: 1.5;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.pd-flavor-chips, .pd-combo-flavor-chips) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: .65rem;
+  min-width: 0;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-flavor-chip {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 48px !important;
+  height: auto;
+  padding: .75rem !important;
+  border-radius: .75rem !important;
+  background: var(--theme-surface) !important;
+  box-shadow: none !important;
+  color: var(--theme-text) !important;
+  font-size: .9375rem !important;
+  white-space: normal;
+  text-align: left;
+  justify-content: flex-start;
+  gap: .5rem;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-flavor-chip__name {
+  min-width: 0;
+  flex: 1;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-extra-option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: .8rem !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-extra-option > span:first-child {
+  flex: 1 1 10rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-extra-stepper {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row !important;
+  width: auto;
+  max-width: 100%;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-extra-stepper__btn {
+  min-width: 44px !important;
+  min-height: 44px !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.pd-combo-unit-presentation, .pd-combo-unit-flavor) {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  min-height: 44px;
+  font-size: 1rem;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-extra-option strong {
+  text-transform: none;
+  font-size: .9375rem;
+  line-height: 1.45;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-extra-option input.pd-extra-qty {
+  width: 44px !important;
+  min-height: 44px;
+  padding: 0 !important;
+  text-align: center;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-flavor-chip:is(.is-selected, [aria-pressed="true"]) {
+  background: color-mix(in srgb, var(--brand-primary) 12%, var(--theme-surface)) !important;
+  border-color: var(--brand-primary);
+  box-shadow: inset 0 0 0 1px var(--brand-primary) !important;
 }

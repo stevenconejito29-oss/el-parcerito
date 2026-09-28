@@ -1,0 +1,245 @@
+/* Combos — presentación pulida y coherente entre card, detalle y carrito.
+   Sin dependencias de tokens.css: usa CSS vars con fallback y variables de marca
+   (--brand-primary) cuando existan para respetar el tema de cada tienda. */
+
+/* ═══ Card de listado ═════════════════════════════════════════════════ */
+body.ox-body-public .ep-card-combo-panel {
+  background:linear-gradient(180deg,#f7f9f2 0%,#eef3e7 100%);
+  border:1px solid #cad9be;
+  border-radius:14px;
+  padding:12px 14px;
+  display:grid;
+  gap:10px;
+  box-shadow:0 1px 0 #ffffff8a inset;
+}
+body.ox-body-public .ep-card-combo-panel-warn {
+  background:#fff5e6;
+  border-color:#e0b877;
+  color:#6b3c00;
+}
+body.ox-body-public .ep-card-combo-line { display:block; min-width:0; }
+body.ox-body-public .ep-card-combo-label {
+  display:inline-block;
+  color:#3b5544;
+  font-size:.68rem;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  font-weight:700;
+  margin-bottom:4px;
+}
+body.ox-body-public .ep-card-combo-copy {
+  color:#172b3a;
+  font-size:.85rem;
+  line-height:1.4;
+  display:block;
+  overflow-wrap:anywhere;
+}
+body.ox-body-public .combo-included-list {
+  list-style:none;
+  margin:.2rem 0 0;
+  padding:0;
+  display:grid;
+  gap:4px;
+  color:#172b3a;
+  font-size:.85rem;
+  line-height:1.4;
+}
+body.ox-body-public .combo-included-list li {
+  min-width:0;
+  overflow-wrap:anywhere;
+  display:flex;
+  gap:6px;
+  align-items:baseline;
+}
+body.ox-body-public .combo-included-list li strong {
+  color:#24412e;
+  font-weight:700;
+  flex-shrink:0;
+}
+body.ox-body-public .combo-choice-hint {
+  margin:0;
+  padding-top:6px;
+  border-top:1px dashed #cad9be;
+  font-size:.75rem;
+  line-height:1.4;
+  color:#475649;
+  overflow-wrap:anywhere;
+}
+
+/* ═══ Detalle de producto — wizard ════════════════════════════════════ */
+body.ox-body-public .combo-base-preview {
+  padding:14px 16px;
+  margin:14px 0;
+  background:linear-gradient(180deg,#f3f6ee 0%,#e9efe0 100%);
+  color:#24412e;
+  border:1px solid #cad9be;
+  border-radius:14px;
+  box-shadow:0 1px 0 #ffffff8a inset;
+}
+body.ox-body-public .combo-base-preview strong {
+  display:block;
+  font-size:.72rem;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  color:#3b5544;
+  margin-bottom:8px;
+}
+body.ox-body-public .combo-base-preview .combo-included-list { font-size:.9rem; }
+
+body.ox-body-public .pd-combo-guide { display:flex; flex-direction:column; align-items:stretch; gap:10px; }
+body.ox-body-public .pd-combo-guide-steps {
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+body.ox-body-public .pd-combo-guide-step {
+  width:auto;
+  height:auto;
+  min-height:44px;
+  max-width:100%;
+  padding:8px 12px;
+  border-radius:12px;
+  font-size:.8rem;
+  line-height:1.35;
+  font-weight:600;
+  text-align:left;
+  overflow-wrap:anywhere;
+  white-space:normal;
+  background:#fff;
+  border:1px solid #d7dfd1;
+  color:#3b5544;
+  cursor:pointer;
+  transition:background .15s ease, border-color .15s ease, transform .1s ease;
+}
+body.ox-body-public .pd-combo-guide-step:hover { transform:translateY(-1px); }
+body.ox-body-public .pd-combo-guide-step.is-complete {
+  background:#e5f2dd;
+  border-color:#a9c99a;
+  color:#204d2a;
+}
+body.ox-body-public .pd-combo-guide-step[aria-current="step"] {
+  background:var(--brand-primary,#24412e);
+  color:var(--brand-on-primary,#fff);
+  border-color:var(--brand-primary,#24412e);
+}
+
+/* ═══ Carrito — combo expandible ══════════════════════════════════════ */
+body.ox-body-public .cr-combo {
+  border:1px solid #d7dfd1;
+  border-radius:14px;
+  background:#fbfcf8;
+  overflow:hidden;
+}
+body.ox-body-public .cr-combo-toggle {
+  padding:12px 14px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  color:#24412e;
+  font-weight:600;
+  cursor:pointer;
+  user-select:none;
+}
+body.ox-body-public .cr-combo-toggle::-webkit-details-marker { display:none; }
+body.ox-body-public .cr-combo-pill {
+  margin-left:auto;
+  background:#e5f2dd;
+  color:#204d2a;
+  padding:3px 9px;
+  border-radius:999px;
+  font-size:.72rem;
+  font-weight:700;
+  letter-spacing:.02em;
+}
+body.ox-body-public .cr-combo-chevron {
+  transition:transform .2s ease;
+  color:#3b5544;
+}
+body.ox-body-public .cr-combo[open] .cr-combo-chevron { transform:rotate(-180deg); }
+body.ox-body-public .cr-combo-rows {
+  padding:2px 14px 14px;
+  background:#fbfcf8;
+  max-height:none;
+}
+body.ox-body-public .cr-combo-scope {
+  margin:0 0 8px;
+  padding:6px 10px;
+  background:#f0f3ea;
+  border-radius:8px;
+  font-size:.72rem;
+  color:#475649;
+  line-height:1.4;
+}
+body.ox-body-public .cr-combo-section {
+  margin-top:12px;
+  margin-bottom:4px;
+  color:#3b5544;
+  font-weight:700;
+  font-size:.75rem;
+  letter-spacing:.03em;
+  text-transform:uppercase;
+}
+body.ox-body-public .cr-combo-row {
+  border-bottom:1px solid #e4e8df;
+  padding:10px 0;
+  display:flex;
+  gap:8px;
+  align-items:center;
+  flex-wrap:wrap;
+}
+body.ox-body-public .cr-combo-row:last-child { border-bottom:none; }
+body.ox-body-public .cr-combo-row-img {
+  width:36px;
+  height:36px;
+  border-radius:8px;
+  object-fit:cover;
+  flex-shrink:0;
+}
+body.ox-body-public .cr-combo-row-qty {
+  font-weight:700;
+  color:#24412e;
+  min-width:24px;
+}
+body.ox-body-public .cr-combo-row-name {
+  font-weight:600;
+  color:#172b3a;
+  flex:1;
+  min-width:0;
+  overflow-wrap:anywhere;
+}
+body.ox-body-public .cr-combo-tag {
+  max-width:100%;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  line-height:1.4;
+  font-size:.72rem;
+  padding:3px 8px;
+  border-radius:999px;
+  background:#eef3e7;
+  color:#3b5544;
+  border:1px solid #d7dfd1;
+}
+body.ox-body-public .cr-combo-tag--sabor { background:#fff4d6; color:#7a5510; border-color:#e5c684; }
+body.ox-body-public .cr-combo-tag--pres  { background:#e6f0f7; color:#1a4870; border-color:#b8d3e6; }
+body.ox-body-public .cr-combo-tag--extra { background:#e5f2dd; color:#1e5b2a; border-color:#a9c99a; font-weight:700; }
+
+/* ═══ Resumen del wizard (estado global) ══════════════════════════════ */
+body.ox-body-public .pd-selection-summary {
+  color:#24412e;
+  background:#edf5e9;
+  border-color:#b8cdb0;
+}
+body.ox-body-public .pd-selection-summary.is-incomplete {
+  color:#6b3c00;
+  background:#fff3da;
+  border-color:#d8ba7d;
+}
+
+/* ═══ Móviles pequeños ════════════════════════════════════════════════ */
+@media (max-width: 380px) {
+  body.ox-body-public .ep-card-combo-panel { padding:10px 12px; gap:8px; }
+  body.ox-body-public .combo-included-list { font-size:.8rem; }
+  body.ox-body-public .cr-combo-row-img { width:32px; height:32px; }
+  body.ox-body-public .cr-combo-tag { font-size:.68rem; padding:2px 6px; }
+}

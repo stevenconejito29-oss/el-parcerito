@@ -320,3 +320,117 @@ body.ox-body-public .ep-modal-add-btn:is(:hover, :focus-visible)::before {
     display: none;
   }
 }
+
+/* Ficha legible con un único desplazamiento vertical, también con zoom. */
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-modal-panel {
+  display: block;
+  width: min(100%, 38rem);
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-modal-heritage-handle {
+  display: none;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-modal-img-wrap {
+  height: clamp(110px, 22dvh, 210px);
+  aspect-ratio: auto !important;
+  min-height: 0;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-modal-body {
+  overflow: visible;
+  padding: 1rem !important;
+  margin: 0;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-modal-name {
+  font-size: 1.25rem !important;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-modal-desc {
+  display: block;
+  overflow: visible;
+  font-size: .9375rem !important;
+  line-height: 1.55 !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-modal-combo-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: .65rem;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-modal-combo-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  font-size: .9375rem;
+  line-height: 1.45;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.ep-modal-combo-item-fix, .ep-modal-combo-item-sel) {
+  grid-column: 2;
+  justify-self: start;
+  font-size: .75rem;
+  white-space: normal;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-modal-choice-summary {
+  font-size: .875rem;
+  line-height: 1.5;
+  margin: 0;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-modal-options section {
+  padding: .8rem;
+  margin: .75rem 0;
+  border: 1px solid var(--col-border);
+  border-radius: .75rem;
+  background: var(--theme-surface-alt);
+  overflow-wrap: anywhere;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-modal-options h3 {
+  font-size: 1rem;
+  margin: 0 0 .3rem;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-modal-options p {
+  font-size: .875rem;
+  line-height: 1.5;
+  margin: .25rem 0 0;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.ep-modal-pres-pill, .ep-modal-detail-btn, .ep-modal-add-btn) {
+  height: auto;
+  min-height: 48px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-modal-actions {
+  position: static;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-modal-add-btn {
+  flex: 1 1 10rem;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-modal-close {
+  position: absolute;
+  min-width: 44px !important;
+  min-height: 44px !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-modal-close {
+  top: .65rem !important;
+  right: .65rem !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-modal-price {
+  color: var(--theme-text) !important;
+  text-shadow: none !important;
+  white-space: normal;
+  font-size: 1.5rem !important;
+  line-height: 1.4;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-modal-options :is(h3, p) {
+  color: var(--theme-text) !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-modal-mode-detail .ep-modal-detail-btn {
+  background: var(--action-primary) !important;
+  color: var(--action-on-primary) !important;
+  border-color: var(--action-primary) !important;
+  box-shadow: none !important;
+}

@@ -352,6 +352,24 @@ class WebChatTest(unittest.TestCase):
         self.assertIn("no pudimos verificar", "\n".join(m["body"] for m in payload["messages"]).lower())
         self.assertEqual(payload["orders"], [])
 
+    def test_ticket_request_returns_only_active_authorized_orders(self):
+        customer = User(nombre="QA", email="tickets@test.invalid", rol="cliente", activo=True, password_hash="!")
+        db.session.add(customer); db.session.flush()
+        active = Order(numero_pedido="QA-TICKET", cliente_id=customer.id, estado="armando", subtotal=10, total=10)
+        closed = Order(numero_pedido="QA-CLOSED", cliente_id=customer.id, estado="entregado", subtotal=10, total=10)
+        db.session.add_all([active, closed]); db.session.commit()
+        owner = self.app.test_client()
+        with owner.session_transaction() as browser:
+            browser["guest_order_tokens"] = {str(row.id): {"token":"qa-private"} for row in (active, closed)}
+        for index, message in enumerate(("quiero mi ticket", "dame el tiket", "mi recibo")):
+            payload = owner.post("/api/web-chat/messages", json={"message":message,"nonce":f"ticket-{index}"}).get_json()
+            self.assertEqual([row["number"] for row in payload["orders"]], ["QA-TICKET"])
+            self.assertEqual(payload["orders"][0]["tracking_url"], f"/pedido/{active.id}/confirmado")
+            self.assertIn("Ver pedido y ticket", payload["messages"][-1]["body"])
+        foreign = self.app.test_client().post("/api/web-chat/messages", json={"message":"mi ticket","nonce":"foreign"}).get_json()
+        self.assertEqual(foreign["orders"], [])
+        self.assertNotIn("QA-TICKET", str(foreign))
+
     def test_closed_orders_do_not_appear_in_chat(self):
         customer = User(nombre="Cliente cerrado", email="closed@test.invalid", rol="cliente", activo=True)
         customer.set_password("irrelevant-test-password")

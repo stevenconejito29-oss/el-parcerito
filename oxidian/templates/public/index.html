@@ -4,10 +4,10 @@
 {% block title %}{{ brand.nombre }} — Pide online{% endblock %}
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-menu.css', v=asset_version) }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-product-card.css', v=asset_version) }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-product-modal.css', v=asset_version) }}">
 {% endblock %}
 {% block styles_final %}<link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-pwa-canonical.css', v=asset_version) }}">{% endblock %}
+{% block styles_components %}<link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-product-modal.css', v=asset_version) }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-product-card.css', v=asset_version) }}">{% endblock %}
 {% block preload %}
 {# LCP hint: preload de la imagen del hero para que empiece a bajar mientras
    el navegador parsea el CSS. Reduce el TTI perceptible en móvil sin cambiar
@@ -353,7 +353,7 @@
     <span class="ep-mc-dest-info">
       {% if mc.titulo %}<span class="ep-mc-dest-title">{{ mc.titulo }}</span>{% endif %}
       <span class="ep-mc-dest-name">{{ mc.producto.nombre }}</span>
-      <span class="ep-mc-dest-price">€{{ "%.2f"|format(mc.producto.precio_final) }}</span>
+      <span class="ep-mc-dest-price">€{{ "%.2f"|format(mc.producto.precio_base_venta) }}</span>
     </span>
   </a>
   {% endif %}
@@ -387,7 +387,7 @@
       <span class="ep-mc-dest-name">{{ p.nombre }}</span>
       <span class="ep-mc-dest-price">
         {% if p.solo_canje %}{{ loyalty_icon() }} {{ p.puntos_para_canje or 0 }} {{ ui.loyalty_unit_plural }}
-        {% else %}€{{ "%.2f"|format(p.precio_final) }}{% endif %}
+        {% else %}€{{ "%.2f"|format(product_cards[p.id].display_price) }}{% endif %}
       </span>
     </span>
   </a>
@@ -440,7 +440,7 @@
     {% elif item.tipo == 'producto_destacado' and item.producto %}
     <a class="ep-menu-config-product" href="{{ url_for('public.producto_detalle', producto_id=item.producto_id, origen=product_origins.get(item.producto_id, origen_actual)) }}">
       {% if item.producto.imagen_url %}<img src="{{ item.producto.imagen_url|upload_url }}" alt="" loading="lazy" decoding="async">{% endif %}
-      <div><small>Recomendado</small><strong>{{ item.titulo or item.producto.nombre }}</strong><span>€{{ "%.2f"|format(item.producto.precio_final) }}</span></div>
+      <div><small>Recomendado</small><strong>{{ item.titulo or item.producto.nombre }}</strong><span>€{{ "%.2f"|format(item.producto.precio_base_venta) }}</span></div>
     </a>
     {% elif item.tipo == 'banner' and item.imagen_url %}
     <a class="ep-menu-config-banner" href="{{ item.enlace_url or '#catalogo' }}"
@@ -554,6 +554,7 @@
       </div>
 
       {# Stock urgente #}
+      <div id="ep-modal-options" class="ep-modal-options hidden"></div>
       <div id="ep-modal-stock" class="ep-modal-stock hidden"></div>
 
       {# Alérgenos (solo en tienda de comida) #}
@@ -618,7 +619,8 @@
     "id": {{ p.id }},
     "nombre": {{ p.nombre|tojson }},
     "descripcion": {{ (p.descripcion or '')|tojson }},
-    "precio_final": {{ p.precio_final|float if p.precio_final is not none else 0 }},
+    "precio_final": {{ p.precio_base_venta|float }},
+    "display_price": {{ product_cards[p.id].display_price|float }},
     "precio": {{ p.precio|float if p.precio is not none else 0 }},
     "es_combo": {{ 'true' if p.es_combo else 'false' }},
     "combo_precio_modo": {{ (p.combo_precio_modo_normalizado if p.es_combo else '')|tojson }},
@@ -641,7 +643,9 @@
     "origin": {{ product_origins.get(p.id, origen_actual)|tojson }},
     "url": {{ url_for('public.producto_detalle', producto_id=p.id, origen=product_origins.get(p.id, origen_actual))|tojson }},
     "add_url": {{ url_for('public.agregar_carrito', producto_id=p.id)|tojson }},
-    "combo_preview": [{% if p.es_combo %}{% for ci in product_cards[p.id].combo_items[:5] %}{{ {"nombre": ci.componente.nombre, "qty": ci.cantidad, "sel": ci.es_seleccionable, "grupo": ci.grupo_display, "extra": ci.precio_extra_float}|tojson }}{% if not loop.last %},{% endif %}{% endfor %}{% endif %}],
+    "combo_preview": [{% if p.es_combo %}{% for ci in product_cards[p.id].combo_items if not ci.es_seleccionable %}{{ {"nombre": ci.componente.nombre ~ (" · " ~ ci.presentacion.label if ci.presentacion else "") ~ (" · " ~ ci.fixed_flavor_option.nombre if ci.fixed_flavor_option else ""), "qty": ci.cantidad, "sel": ci.es_seleccionable, "grupo": ci.grupo_display, "extra": ci.precio_extra_float}|tojson }}{% if not loop.last %},{% endif %}{% endfor %}{% endif %}],
+    "combo_choices": {{ product_cards[p.id].combo_choices|tojson }},
+    "option_groups": {{ product_cards[p.id].option_groups|tojson }},
     "presentaciones": [{% for pr in product_cards[p.id].presentations %}{{ {"tamaño": pr.tamaño, "extra": pr.precio_extra_float, "orden": pr.orden}|tojson }}{% if not loop.last %},{% endif %}{% endfor %}]
   }{% if not loop.last %},{% endif %}
 {% else %}
@@ -957,7 +961,7 @@ function openModal(id) {
     _priceEl.append(loyaltyIcon, document.createTextNode(` ${d.puntos_para_canje || 0} ${OX_UI.loyalty_unit_plural || 'puntos'}`));
     _priceEl.classList.add('ep-modal-price--points');
   } else {
-    _priceEl.textContent = `€${precioFinal.toFixed(2)}`;
+    _priceEl.textContent = `${!d.es_combo && d.presentaciones?.length ? 'Desde ' : ''}€${Number(d.display_price ?? precioFinal).toFixed(2)}${d.es_combo && d.combo_precio_modo === 'descuento_porcentaje' ? ' orientativo' : ''}`;
     _priceEl.classList.remove('ep-modal-price--points');
   }
   const oldP = document.getElementById('ep-modal-price-old');
@@ -997,7 +1001,7 @@ function openModal(id) {
   // Combo preview en modal
   const comboWrap = document.getElementById('ep-modal-combo-info');
   const comboList = document.getElementById('ep-modal-combo-list');
-  if (d.es_combo && d.combo_preview?.length) {
+  if (d.es_combo && (d.combo_preview?.length || d.combo_choices?.length)) {
     comboList.replaceChildren();
     d.combo_preview.forEach(ci => {
       const row = document.createElement('div');
@@ -1022,17 +1026,47 @@ function openModal(id) {
       row.appendChild(tag);
       comboList.appendChild(row);
     });
+    (d.combo_choices || []).forEach(group => {
+      const row = document.createElement('p');
+      row.className = 'ep-modal-choice-summary';
+      row.textContent = `${group.name}: ${group.minimum === group.maximum ? `elige ${group.minimum}` : `elige entre ${group.minimum} y ${group.maximum}`}. Revisa los suplementos al armarlo.`;
+      comboList.appendChild(row);
+    });
     comboWrap.classList.remove('hidden');
   } else {
     comboWrap.classList.add('hidden');
   }
+
+  const optionsWrap = document.getElementById('ep-modal-options');
+  optionsWrap.replaceChildren();
+  (d.option_groups || []).forEach(group => {
+    const section = document.createElement('section');
+    const title = document.createElement('h3');
+    title.textContent = group.name;
+    const limits = document.createElement('p');
+    limits.textContent = group.minimum ? `Elige ${group.minimum === group.maximum ? group.minimum : `entre ${group.minimum} y ${group.maximum}`}` : `Opcional · hasta ${group.maximum}`;
+    const list = document.createElement('p');
+    list.textContent = group.options.map(option => `${option.name}${option.price > 0 ? ` (+€${option.price.toFixed(2)})` : ''}`).join(' · ');
+    section.append(title, limits, list);
+    optionsWrap.appendChild(section);
+  });
+  if (!d.disponible_directo && d.presentaciones?.length) {
+    const section = document.createElement('section');
+    const title = document.createElement('h3');
+    title.textContent = 'Presentaciones disponibles';
+    const sizes = document.createElement('p');
+    sizes.textContent = d.presentaciones.map(p => `${p.tamaño} · €${(Number(d.precio_final) + Number(p.extra || 0)).toFixed(2)}`).join(' / ');
+    section.append(title, sizes);
+    optionsWrap.appendChild(section);
+  }
+  optionsWrap.classList.toggle('hidden', !optionsWrap.children.length);
 
   // Presentaciones (tamaños) opt-in
   const presWrap = document.getElementById('ep-modal-pres');
   const presList = document.getElementById('ep-modal-pres-list');
   const presVal  = document.getElementById('ep-modal-pres-val');
   const priceEl  = document.getElementById('ep-modal-price');
-  const precioBase = Number(d.precio ?? 0);
+  const precioBase = Number(d.precio_final ?? 0);
   const ES_COMIDA = {{ 'true' if brand.es_comida else 'false' }};
   const presEmojis = ES_COMIDA
     ? { 'pequeño': '🥣', 'mediano': '🍽️', 'grande': '🍛' }
@@ -1040,7 +1074,7 @@ function openModal(id) {
   const presLabels = ES_COMIDA
     ? { 'pequeño': 'Pequeño', 'mediano': 'Mediano', 'grande': 'Grande' }
     : { 'pequeño': 'S', 'mediano': 'M', 'grande': 'L' };
-  if (Array.isArray(d.presentaciones) && d.presentaciones.length > 0) {
+  if (d.disponible_directo && Array.isArray(d.presentaciones) && d.presentaciones.length > 0) {
     presList.replaceChildren();
     presWrap.classList.remove('hidden');
     d.presentaciones.forEach((pres, idx) => {
@@ -1104,7 +1138,7 @@ function openModal(id) {
     panel?.classList.add('ep-modal-mode-quick');
   } else {
     form.classList.add('hidden');
-    detBtn.textContent = d.es_combo ? '🎁 Elegir opciones del combo →' : 'Ver detalles →';
+    detBtn.textContent = d.es_combo ? '🎁 Elegir opciones del combo →' : d.option_groups?.length ? 'Elegir sabores y extras →' : 'Ver detalles →';
     panel?.classList.add('ep-modal-mode-detail');
   }
 

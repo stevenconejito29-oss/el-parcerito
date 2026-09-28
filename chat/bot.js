@@ -8873,22 +8873,22 @@ async function tryHandleConfirmationReply(jid, respuesta, ses = null) {
       telefono: phoneFromJid(jid),
       respuesta,
     });
-    if (!resp || !resp.ok) return false;
+    if (!resp || !resp.ok) throw new Error('Confirmación no disponible');
     if (resp.accion === 'sin_pendiente' || resp.accion === 'respuesta_invalida') {
-      return false;
+      if (resp.mensaje) await sendText(jid, resp.mensaje, { transactional: true, humanize: false });
+      return true;
     }
     // La confirmación cierra el subflujo. No conservamos botones ni datos del
     // pedido anterior: así un número posterior no ejecuta una acción obsoleta.
     const current = ses || getSesion(jid);
     setClientState(current, 'main_menu');
-    const nextStep = resp.accion === 'confirmado'
-      ? `\n\nEscribe *2* para consultar su estado o *MENU* para ver todas las opciones.`
-      : `\n\nEscribe *1* para volver a la tienda o *MENU* para ver las opciones.`;
-    if (resp.mensaje) await sendText(jid, `${resp.mensaje}${nextStep}`);
+    const nextStep = `\n\nVuelve a la app desde el dispositivo donde hiciste el pedido para ver su ticket y estado. Para consultas, usa el chat web:\n${getTiendaUrl()}/ayuda`;
+    if (resp.mensaje) await sendText(jid, `${resp.mensaje}${nextStep}`, { transactional: true, humanize: false });
     return true;
   } catch (err) {
     log('warn', 'confirmacion_reply_fail', err?.message || String(err));
-    return false;
+    await sendText(jid, 'No hemos podido comprobar la respuesta de tu pedido. Revisa su estado en la app o vuelve a enviar *SI* para confirmar o *NO* para cancelar.', { transactional: true, humanize: false });
+    return true;
   }
 }
 

@@ -55,6 +55,11 @@
         const description = root.querySelector('[data-order-description]');
         if (title) title.textContent = view.title;
         if (description) description.textContent = view.description;
+        const hero = root.querySelector('.order-success-hero');
+        if (hero) {
+          hero.classList.toggle('order-success-hero--action', view.confirmation_pending);
+          hero.classList.toggle('order-success-hero--complete', !view.confirmation_pending);
+        }
         const alert = root.querySelector('.order-verification-alert');
         if (alert) alert.hidden = !view.confirmation_pending;
         const eyebrow = root.querySelector('[data-order-eyebrow]');
@@ -76,6 +81,8 @@
       if (progress) progress.hidden = nextStage === 0;
       const loyalty = root.querySelector(".order-loyalty-card");
       if (loyalty && state.active === false) loyalty.hidden = true;
+      const notify = root.querySelector('.order-notify-card');
+      if (notify) notify.hidden = state.active === false;
       if (nextStage) updateProgress(nextStage);
     } catch (_) {
       const connection = root.querySelector('[data-order-connection]');
@@ -93,5 +100,8 @@
   // Una petición a la vez: una respuesta lenta no puede sobrescribir otra más reciente.
   const schedule = () => { clearTimeout(timer); if (!document.hidden) refresh(); };
   document.addEventListener('visibilitychange', schedule);
+  window.addEventListener('pageshow', schedule);
+  window.addEventListener('online', schedule);
+  window.addEventListener('pagehide', () => clearTimeout(timer));
   schedule();
 })();
