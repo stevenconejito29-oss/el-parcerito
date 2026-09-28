@@ -125,9 +125,9 @@
               {{ _pres_emoji_map.get(item.presentacion_tamaño, '📏') }}
               <strong>{{ _pres_labels_map.get(item.presentacion_tamaño, item.presentacion_tamaño|capitalize) }}</strong>
               {% if item.presentacion_extra and item.presentacion_extra > 0 %}
-              <small>(+€{{ "%.2f"|format(item.presentacion_extra) }})</small>
+              <small style="font-size:clamp(.6rem, 1.4vw, .75rem)">(+€{{ "%.2f"|format(item.presentacion_extra) }})</small>
               {% elif item.presentacion_extra and item.presentacion_extra < 0 %}
-              <small>(−€{{ "%.2f"|format(item.presentacion_extra|abs) }})</small>
+              <small style="font-size:clamp(.6rem, 1.4vw, .75rem)">(−€{{ "%.2f"|format(item.presentacion_extra|abs) }})</small>
               {% endif %}
             </p>
             {% endif %}
@@ -139,7 +139,7 @@
             <details class="cr-combo" open>
               <summary class="cr-combo-toggle">
                 🎁 {{ ui.cart_combo_view }}
-                <span class="cr-combo-pill">{{ fijos|length + sels|length }} {{ ui.cart_combo_items }}</span>
+                <span class="cr-combo-pill">{{ item.combo_display_items|sum(attribute="cantidad") }} unidades</span>
                 <svg class="cr-combo-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
               </summary>
               <div class="cr-combo-rows"><p class="cr-combo-scope">Contenido por combo · {{ item.cantidad }} combo{{ "s" if item.cantidad != 1 else "" }} en tu carrito</p>
@@ -155,7 +155,7 @@
                   {% endfor %}{% endif %}
                   {% if d.presentation_cliente %}<span class="cr-combo-tag cr-combo-tag--pres">📏 {{ d.presentation_cliente.get('label') }}</span>{% endif %}
                   {% if d.sabor_cliente %}<span class="cr-combo-tag cr-combo-tag--sabor">🎨 {% for s in d.sabor_cliente %}{{ s.get('nombre') }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
-                  <span class="cr-combo-tag cr-combo-tag--fijo">{{ ui.cart_combo_included }}</span>
+
                 </div>
                 {% endfor %}
                 {% endif %}
@@ -173,7 +173,7 @@
                   {% if d.presentation_cliente %}<span class="cr-combo-tag cr-combo-tag--pres">📏 {{ d.presentation_cliente.get('label') }}</span>{% endif %}
                   {% if d.sabor_cliente %}<span class="cr-combo-tag cr-combo-tag--sabor">🎨 {% for s in d.sabor_cliente %}{{ s.get('nombre') }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
                   {% if ci.precio_extra and ci.precio_extra > 0 %}<span class="cr-combo-tag cr-combo-tag--extra">+€{{ "%.2f"|format(ci.precio_extra) }}</span>{% endif %}
-                  <span class="cr-combo-tag cr-combo-tag--sel">{{ ui.cart_combo_selection }}</span>
+
                 </div>
                 {% endfor %}
                 {% endfor %}

@@ -170,6 +170,42 @@ body.view-preparador .work-btn-success {
   font-weight: 900 !important;
 }
 
+/* Nombre del producto + badges: nunca desborda en tablet apaisado */
+body.view-preparador .work-item-main,
+body.view-preparador .work-item {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+body.view-preparador .work-item-main > span:first-child {
+  min-width: 0;
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.35;
+}
+body.view-preparador .work-item-main :is(em, .work-combo-badge, .work-reward-badge, .work-origin-badge) {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 2px 4px 2px 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: .68rem;
+  font-weight: 800;
+  font-style: normal;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+/* Secciones del combo por línea (base fija, elecciones, extras) — nombres largos ok */
+body.view-preparador :is(.work-sec-item, .work-item-choice, .work-item-fixed) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    SUPER ADMIN + ADMIN — dashboards y config
    ═══════════════════════════════════════════════════════════════════ */

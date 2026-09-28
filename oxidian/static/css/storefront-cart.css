@@ -505,7 +505,13 @@
 .cr-combo-row-img   { width: 24px; height: 24px; object-fit: cover; border-radius: .35rem; flex-shrink: 0; border: 1px solid rgba(255,200,120,.08); }
 .cr-combo-row-qty   { font-weight: 950; color: rgba(255,194,0,.8); min-width: 18px; flex-shrink: 0; }
 .cr-combo-row-name  { flex: 1 1 auto; min-width: 0; overflow-wrap: break-word; word-break: break-word; color: var(--col-muted); }
-.cr-combo-tag { font-size: .58rem; font-weight: 800; border-radius: 999px; padding: 1px 5px; flex-shrink: 0; }
+.cr-combo-tag {
+  font-size: clamp(.58rem, 1.4vw, .68rem); font-weight: 800; border-radius: 999px;
+  padding-block: 2px; padding-inline: clamp(4px, 1.2vw, 7px);
+  min-width: 0; max-width: 100%;
+  overflow-wrap: anywhere; word-break: break-word;
+  line-height: 1.25;
+}
 .cr-combo-tag--fijo  { background: rgba(255,194,0,.1); color: rgba(255,194,0,.8); }
 .cr-combo-tag--sel   { background: rgba(255,112,67,.1); color: rgba(255,112,67,.85); }
 .cr-combo-tag--extra { background: rgba(94,240,151,.1); color: #5EF097; }
