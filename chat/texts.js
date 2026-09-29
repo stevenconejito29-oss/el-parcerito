@@ -63,6 +63,18 @@ const MINIAPP_VARIANTS = [
   "🚀 Tip: si vas a pedir seguido, *instala la Mini App*. Un toque y ya estás dentro.",
 ];
 
+// Pools de emoji y puntuación para variar aleatoriamente en cada mensaje.
+// Reduce fingerprint de patrón repetitivo detectable por Meta anti-spam.
+const MINIAPP_EMOJI_POOL = ['💡', '🔔', '⭐', '✨', '🚀', '📲', '⚡'];
+const PUNCTUATION_VARIANTS = ['.', '...', '!', ' 😉', ' 👇', '.', '…'];
+
+function _pickEmojiPunctuation(rnd) {
+  return {
+    emoji: MINIAPP_EMOJI_POOL[Math.floor(rnd() * MINIAPP_EMOJI_POOL.length)],
+    punct: PUNCTUATION_VARIANTS[Math.floor(rnd() * PUNCTUATION_VARIANTS.length)],
+  };
+}
+
 function menuPrincipal(ctx, random) {
   const rnd = typeof random === "function" ? random : Math.random;
   const lines = clientMenuLines(ctx);
@@ -71,8 +83,12 @@ function menuPrincipal(ctx, random) {
     : "";
   // App hint: probabilístico (45%) + variantes rotativas → evita patrón
   // repetitivo que Meta pueda flaggear como spam automático.
+  // Variación aleatoria de emoji/puntuación aplicada al final del texto
+  // para hacer cada mensaje único incluso si el usuario recibe el mismo
+  // template varias veces (menos fingerprint anti-spam Meta).
+  const _appliedVariant = _pickEmojiPunctuation(rnd);
   const appHint = (ctx.miniappEnabled && rnd() < 0.45)
-    ? `\n\n${_pick(MINIAPP_VARIANTS, rnd)}`
+    ? `\n\n${_pick(MINIAPP_VARIANTS, rnd).replace(/^💡/, _appliedVariant.emoji).replace(/\.$/, _appliedVariant.punct)}`
     : "";
   const benefits = benefitsHint(ctx, rnd);
   return (

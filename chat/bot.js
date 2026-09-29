@@ -3037,6 +3037,15 @@ async function sendText(jid, text, opts = {}) {
     log('info', 'send_simulated', `Simulating send to ${target}: ${safeText.slice(0,100)}`);
     return true;
   }
+  // Anti-bot signal: 3% de silencio simulado en respuestas NO transaccionales
+  // (menús, hints, saludos). Nunca aplica a códigos de entrega, confirmaciones
+  // o handoff a humanos. Forza al cliente a reintentar como haría con un humano
+  // distraído — reduce fingerprint de "responde SIEMPRE al 100%".
+  if (!opts.transactional && !opts.critical && Math.random() < 0.03) {
+    log('info', 'simulated_no_response',
+        `to ${target} len=${safeText.length} — silence to reduce fingerprint`);
+    return true; // Mentimos: reportamos éxito pero no enviamos
+  }
   const evolutionKey = getEvolutionKey();
   const evolutionUrl = getEvolutionUrl();
   const evolutionInstance = getEvolutionInstance();

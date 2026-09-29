@@ -243,9 +243,35 @@
     if(repeat){repeat.disabled=true;try{const data=await call(`/orders/${repeat.dataset.reorderId}/reorder`,{});window.location.assign(data.redirect_url||'/carrito');}catch(error){status.textContent=error.message;repeat.disabled=false;}return;}
     const button=event.target.closest('[data-order-id]'); if(!button)return;
     const number=button.dataset.orderNumber || 'seleccionado';
-    if(!window.confirm(`¿Cancelar definitivamente el pedido ${number}?`))return;
-    button.disabled=true;
-    try{render(await call(`/orders/${button.dataset.orderId}/cancel`,{confirm:true}));}catch(error){status.textContent=error.message;button.disabled=false;}
+    /* Cancelación anti-accidental: doble tap con 5s + reset visual.
+       Antes: window.confirm() se saltaba con Enter y confundía en móvil.
+       Ahora el botón cambia de estado, muestra countdown y solo se
+       confirma con segundo tap deliberado. */
+    if (!button.dataset.confirmPending) {
+      const originalText = button.textContent;
+      const originalClass = button.className;
+      button.dataset.confirmPending = '1';
+      button.classList.add('is-confirming');
+      let remaining = 5;
+      button.textContent = `Toca de nuevo (${remaining}s)`;
+      const reset = () => {
+        button.textContent = originalText;
+        button.className = originalClass;
+        delete button.dataset.confirmPending;
+        clearInterval(tick);
+      };
+      const tick = setInterval(() => {
+        remaining -= 1;
+        if (remaining <= 0) { reset(); return; }
+        button.textContent = `Toca de nuevo (${remaining}s)`;
+      }, 1000);
+      button._cancelReset = reset;
+      return;
+    }
+    if (button._cancelReset) button._cancelReset();
+    button.disabled = true;
+    button.textContent = 'Cancelando…';
+    try{render(await call(`/orders/${button.dataset.orderId}/cancel`,{confirm:true}));}catch(error){status.textContent=error.message;button.disabled=false;button.textContent='Cancelar';}
   }
   orders?.addEventListener('click', handleOrderAction);
   reorder?.addEventListener('click', handleOrderAction);
