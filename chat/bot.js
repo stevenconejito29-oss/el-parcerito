@@ -3046,6 +3046,28 @@ async function sendText(jid, text, opts = {}) {
         `to ${target} len=${safeText.length} — silence to reduce fingerprint`);
     return true; // Mentimos: reportamos éxito pero no enviamos
   }
+  // Partición humana: si el mensaje es muy largo (>900 chars) y no es
+  // transaccional/crítico, con 55% de probabilidad partirlo en 2 fragmentos
+  // con delay natural entre ellos (2-5s). Humanos frecuentemente envían
+  // 2-3 mensajes cortos en vez de uno largo; el bot antes siempre enviaba 1.
+  if (!opts.transactional && !opts.critical && !opts._alreadySplit &&
+      safeText.length > 900 && Math.random() < 0.55) {
+    const targetSplit = Math.floor(safeText.length * (0.45 + Math.random() * 0.1));
+    // Cortar en el próximo doble salto de línea o punto tras el objetivo
+    const nlIndex = safeText.indexOf('\n\n', targetSplit);
+    const dotIndex = safeText.indexOf('. ', targetSplit);
+    const cutAt = nlIndex > 0 && nlIndex < targetSplit + 200 ? nlIndex + 2
+                : dotIndex > 0 && dotIndex < targetSplit + 200 ? dotIndex + 2
+                : targetSplit;
+    const part1 = safeText.slice(0, cutAt).trim();
+    const part2 = safeText.slice(cutAt).trim();
+    if (part1 && part2) {
+      log('info', 'send_humanized_split', `to ${target}: ${part1.length}+${part2.length} chars`);
+      await sendText(jid, part1, {...opts, _alreadySplit: true});
+      await sleep(2000 + Math.floor(Math.random() * 3000)); // 2-5s inter-fragment
+      return await sendText(jid, part2, {...opts, _alreadySplit: true});
+    }
+  }
   const evolutionKey = getEvolutionKey();
   const evolutionUrl = getEvolutionUrl();
   const evolutionInstance = getEvolutionInstance();

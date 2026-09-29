@@ -411,11 +411,35 @@ def _intent_answer(intent: str) -> str | None:
             return "El delivery no está activo ahora mismo. La canasta te mostrará las modalidades realmente disponibles."
         from delivery_mode_service import modos_delivery_activos
         modes = modos_delivery_activos()
+        # Explicación detallada del sistema de franjas: qué es, cómo se
+        # reserva, cómo llega la notificación, y qué pasa si el cupo se
+        # agota. El chat web es el canal de INFO profunda (WhatsApp es
+        # sólo redirect corto).
         if modes["franjas"] and modes["inmediato"]:
-            return "Al finalizar la compra puedes elegir entrega lo antes posible o reservar un día y una franja con cupo. El resumen muestra tu elección antes de confirmar."
+            return (
+                "Puedes elegir entre dos modos al finalizar:\n\n"
+                "🚀 *Entrega inmediata* — cocina empieza en cuanto confirmas y "
+                "el pedido sale hacia ti en el próximo intervalo disponible.\n\n"
+                "📅 *Franjas horarias* — reservas un día y una franja concreta "
+                "(ej.: 13:00–15:00 o 20:00–22:00). Cada franja tiene un cupo máximo "
+                "de pedidos; cuando se llena aparece marcada como completa y no se "
+                "puede reservar más para esa hora.\n\n"
+                "Por defecto, la página te *pre-selecciona automáticamente* la "
+                "franja abierta más cercana con cupo. Sólo tienes que revisar y "
+                "confirmar — o cambiarla si prefieres otra. Recibirás WhatsApp "
+                "cuando el pedido esté armado, en ruta y entregado."
+            )
         if modes["franjas"]:
-            return "El reparto funciona por franjas: en la canasta eliges el día y horario disponible antes de confirmar el pedido."
-        return "El reparto actual es inmediato: cocina prepara el pedido y sale en cuanto esté listo."
+            return (
+                "El reparto funciona por *franjas horarias*: reservas un día y una "
+                "franja de tiempo (ej.: 13:00–15:00 o 20:00–22:00). Cada franja "
+                "tiene un cupo máximo de pedidos; si está llena, la página la "
+                "marca como completa.\n\n"
+                "La canasta te *pre-selecciona la franja abierta más cercana* con "
+                "cupo — sólo confirma o cambia si prefieres otra hora. Recibirás "
+                "WhatsApp cuando el pedido esté armado, en ruta y entregado."
+            )
+        return "El reparto actual es inmediato: cocina prepara el pedido y sale en cuanto esté listo. Recibirás WhatsApp con cada cambio de estado."
     if intent == "favor":
         return ("El Cruce sirve para pedir que recojamos algo en un punto A y lo llevemos a un punto B dentro de cobertura. Describes el encargo, propones un valor y eliges una oferta del rider; la app muestra límites y estado antes de confirmar." if features.get("favores") else "El servicio El Cruce no está activo en este momento.")
     if intent == "loyalty":

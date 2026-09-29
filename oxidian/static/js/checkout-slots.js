@@ -60,6 +60,19 @@
       if (!slots.length) {
         error.textContent = 'No hay horarios disponibles. Consulta más tarde o elige otra forma de entrega.';
         error.hidden = false; retry.hidden = false;
+      } else {
+        /* Pre-selección automática: el backend marca `sugerida=true` en
+           la primera franja abierta con cupo. Al cargar, el JS elige su
+           día y su horario sin que el cliente tenga que buscar. El
+           cliente puede cambiarlo si quiere, pero por defecto ya está
+           reservado el hueco más cercano. */
+        const suggested = slots.find(s => s.sugerida) || slots[0];
+        if (suggested) {
+          day.value = suggested.fecha;
+          renderTimes();
+          const input = list.querySelector(`input[value="${suggested.id}"]`);
+          if (input) { input.checked = true; input.dispatchEvent(new Event('change', {bubbles: true})); }
+        }
       }
     } catch (_) {
       day.replaceChildren(new Option('No se pudieron cargar los días', ''));
