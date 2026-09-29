@@ -241,5 +241,5 @@ body.ox-body-public .pd-selection-summary.is-incomplete {
   body.ox-body-public .ep-card-combo-panel { padding:10px 12px; gap:8px; }
   body.ox-body-public .combo-included-list { font-size:.8rem; }
   body.ox-body-public .cr-combo-row-img { width:32px; height:32px; }
-  body.ox-body-public .cr-combo-tag { font-size:.68rem; padding:2px 6px; }
+  body.ox-body-public .cr-combo-tag { font-size:.74rem; padding:3px 7px; line-height:1.25; }
 }

@@ -3323,13 +3323,27 @@ def responder_confirmacion_pedido():
                 "Si necesitas ayuda, abre el chat dentro de nuestra app."
             ),
         })
-    if pedido.estado != "pendiente":
-        # Estado inconsistente: el operativo ya lo avanzó sin esperar. Dejamos
-        # trazabilidad y aceptamos la confirmación de todas formas para
-        # desbloquear la distribución.
+    if pedido.estado not in ("pendiente", "armando"):
+        # El pedido ya salió de la ventana en que la confirmación tiene sentido
+        # operativo (cancelado, listo, en_ruta o entregado). No se toca — el
+        # cliente recibe un mensaje claro.
+        return jsonify({
+            "ok": True,
+            "accion": "fuera_de_ventana",
+            "numero": pedido.numero_pedido,
+            "estado": pedido.estado,
+            "mensaje": (
+                f"Tu pedido *{pedido.numero_pedido}* ya no está en ventana de "
+                f"confirmación (estado: {pedido.estado}). Si necesitas ayuda, "
+                f"abre el chat dentro de nuestra app."
+            ),
+        })
+    if pedido.estado == "armando":
+        # Race real: el operativo avanzó antes de la respuesta. Aceptamos la
+        # confirmación para desbloquear la distribución, con trazabilidad.
         current_app.logger.warning(
-            "responder_confirmacion: race pedido=%s estado=%s confirmacion=pending",
-            pedido.id, pedido.estado,
+            "responder_confirmacion: race pedido=%s estado=armando confirmacion=pending",
+            pedido.id,
         )
 
     if accion == "confirmar":
