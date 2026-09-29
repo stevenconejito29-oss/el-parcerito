@@ -997,7 +997,13 @@ _MESES_CORTOS_ES = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep
 
 
 def notificar_en_camino(pedido: Order, actor_id: int | None = None):
-    """Aviso de salida compatible con la ruta anterior: solo push/chat web."""
+    """Aviso de salida compatible con la ruta anterior: solo push/chat web.
+
+    Además de notificar al cliente actual, dispara un aviso 'próxima parada'
+    al cliente cuyo pedido va DESPUÉS en la ruta del mismo repartidor. Así
+    ese cliente se puede preparar (bajar a la puerta, tener el importe listo)
+    sin que el rider tenga que pedirlo.
+    """
     from models import WebChatConversation
     from push_service import notify_user
     from web_chat_service import add_message
@@ -1015,4 +1021,105 @@ def notificar_en_camino(pedido: Order, actor_id: int | None = None):
     for conversation in WebChatConversation.query.filter_by(customer_id=pedido.cliente_id, device_hash=pedido.customer_device_hash).all() if pedido.customer_device_hash else []:
         add_message(conversation, "system", mensaje)
     pedido.en_camino_at = utcnow()
+    # Aviso al siguiente pedido de la ruta — best-effort, no bloquea si falla.
+    try:
+        notificar_proxima_parada(pedido)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception(
+            "notificar_proxima_parada falló para pedido %s", pedido.id
+        )
     return None, "push_web"
+
+
+def _distancia_haversine(a_lat, a_lng, b_lat, b_lng) -> float:
+    """Distancia en km entre dos coordenadas. Devuelve inf si falta cualquiera."""
+    if any(v is None for v in (a_lat, a_lng, b_lat, b_lng)):
+        return float("inf")
+    from math import radians, sin, cos, asin, sqrt
+    try:
+        lat1, lng1, lat2, lng2 = map(float, (a_lat, a_lng, b_lat, b_lng))
+    except (TypeError, ValueError):
+        return float("inf")
+    lat1, lng1, lat2, lng2 = map(radians, (lat1, lng1, lat2, lng2))
+    dlat = lat2 - lat1
+    dlng = lng2 - lng1
+    h = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlng / 2) ** 2
+    return 2 * 6371 * asin(sqrt(h))
+
+
+def notificar_proxima_parada(pedido_actual: Order) -> tuple[Order | None, str]:
+    """Notifica al cliente cuyo pedido va DESPUÉS del actual en la ruta.
+
+    Selecciona el candidato así:
+    1. Mismo repartidor que ``pedido_actual``.
+    2. En estado ``listo`` (esperando salir) o ``en_ruta`` sin ``en_camino_at``
+       (aún no notificado individualmente).
+    3. Si ``pedido_actual`` tiene ``slot_id``, se prefieren pedidos del mismo
+       slot para no cruzar tandas.
+    4. Se ordena por distancia haversine desde la dirección del pedido actual
+       (proxy razonable: el rider típicamente va al más cercano a continuación).
+    5. Solo se avisa una vez por pedido: campo ``proxima_parada_avisada_at``
+       (columna nueva).
+    """
+    from models import WebChatConversation
+    from push_service import notify_user
+    from web_chat_service import add_message
+
+    rider_id = pedido_actual.repartidor_id
+    if not rider_id:
+        return None, "sin_repartidor"
+
+    q = Order.query.filter(
+        Order.id != pedido_actual.id,
+        Order.repartidor_id == rider_id,
+        Order.estado.in_(("listo", "en_ruta")),
+        Order.en_camino_at.is_(None),
+    )
+    # Preferimos misma tanda si hay slot
+    slot_id = getattr(pedido_actual, "slot_id", None)
+    if slot_id:
+        mismo_slot = q.filter(Order.slot_id == slot_id).all()
+        candidatos = mismo_slot or q.all()
+    else:
+        candidatos = q.all()
+    if not candidatos:
+        return None, "sin_candidato"
+
+    # Ya avisado (una vez por pedido) → salta
+    def _ya_avisado(p):
+        return getattr(p, "proxima_parada_avisada_at", None) is not None
+    candidatos = [p for p in candidatos if not _ya_avisado(p)]
+    if not candidatos:
+        return None, "todos_ya_avisados"
+
+    # Ordena por distancia desde el pedido actual (si hay coords)
+    origen = (pedido_actual.direccion_lat, pedido_actual.direccion_lng)
+    candidatos.sort(key=lambda p: _distancia_haversine(origen[0], origen[1],
+                                                       p.direccion_lat, p.direccion_lng))
+    proximo = candidatos[0]
+
+    titulo = "🚨 Prepárate — tu pedido va después"
+    cuerpo = (
+        f"El repartidor acaba de salir con el pedido anterior. "
+        f"Tu #{proximo.numero_pedido} es el siguiente — tené listo el importe "
+        f"y esperá el timbre en breve."
+    )
+    if proximo.customer_device_hash:
+        notify_user(
+            proximo.cliente_id, titulo, cuerpo,
+            url=f"/pedido/{proximo.id}/confirmado",
+            tag=f"proxima-parada-{proximo.id}",
+            commit=False,
+            device_hash=proximo.customer_device_hash,
+        )
+    for conv in (WebChatConversation.query.filter_by(
+            customer_id=proximo.cliente_id,
+            device_hash=proximo.customer_device_hash).all()
+            if proximo.customer_device_hash else []):
+        add_message(conv, "system", f"⚠️ {cuerpo}")
+
+    # Marcar avisado (si la columna existe — migración añade proxima_parada_avisada_at)
+    if hasattr(proximo, "proxima_parada_avisada_at"):
+        proximo.proxima_parada_avisada_at = utcnow()
+    return proximo, "avisado"

@@ -3044,6 +3044,11 @@ class Order(db.Model):
     # NULL = aún no salió o no se notificó. El timestamp es la marca
     # operativa Y la señal de idempotencia (combinada con outbox previo).
     en_camino_at = db.Column(db.DateTime)
+    # Marca de aviso "próxima parada" enviado al cliente cuando su pedido va
+    # después del que el rider acaba de sacar. Idempotente: se escribe una
+    # sola vez por pedido para no spamear si el rider hace en-camino varias
+    # veces en rutas con múltiples paradas.
+    proxima_parada_avisada_at = db.Column(db.DateTime)
 
     # ── Señal del bar (proveedor) ────────────────────────────────────
     # No cambia la máquina de estados; es un flag informativo.

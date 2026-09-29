@@ -610,6 +610,17 @@ def _migrate_order_en_camino_at():
         db.session.execute(text("ALTER TABLE orders ADD COLUMN en_camino_at TIMESTAMP"))
 
 
+def _migrate_order_proxima_parada():
+    """Añade Order.proxima_parada_avisada_at (idempotencia del aviso al
+    cliente cuyo pedido va después del que el rider acaba de sacar)."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("orders"):
+        return
+    existing = {col["name"] for col in inspector.get_columns("orders")}
+    if "proxima_parada_avisada_at" not in existing:
+        db.session.execute(text("ALTER TABLE orders ADD COLUMN proxima_parada_avisada_at TIMESTAMP"))
+
+
 def _migrate_user_last_wa_inbound_at():
     """Añade User.last_wa_inbound_at (ventana Meta de service messages).
 
@@ -2345,6 +2356,11 @@ MIGRATIONS = [
         "id": "20260929_01_ai_advisor_conversations",
         "description": "Chat interno del asesor IA comercial: hilo + mensajes con histórico persistente",
         "tables": [AiAdvisorConversation.__table__, AiAdvisorMessage.__table__],
+    },
+    {
+        "id": "20260929_02_order_proxima_parada",
+        "description": "Añade Order.proxima_parada_avisada_at (idempotencia del aviso 'tu pedido va después')",
+        "fn": _migrate_order_proxima_parada,
     },
 ]
 

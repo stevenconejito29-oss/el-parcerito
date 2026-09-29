@@ -133,16 +133,28 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
   }
 }
 
-/* Móvil pequeño: código un poco más pequeño para que no salga del viewport */
+/* Móvil pequeño: código legible en calle con guantes (nunca <1.5rem). */
 @media (max-width: 380px) {
   .route-board .work-code-input {
-    min-height: 54px; font-size: 1.3rem; letter-spacing: .18em;
+    min-height: 56px; font-size: 1.55rem !important; letter-spacing: .22em;
   }
-  /* Botones de dirección (Navegar + Copiar) y llamada/WhatsApp: permitir
-     wrap para no forzar scroll horizontal en 320-360px. */
-  .route-board .flex.gap-2 { flex-wrap: wrap; }
-  .route-board .work-btn { min-height: 44px; }
+  /* Botones de dirección (Navegar + Copiar) y llamada/WhatsApp: cada uno
+     en su propia fila full-width para no comprimir en 320-360px. */
+  .route-board .flex.gap-2 { flex-direction: column; }
+  .route-board .flex.gap-2 > * { width: 100%; }
+  .route-board .work-btn { min-height: 48px; }
   .route-board .work-address { word-break: break-word; overflow-wrap: anywhere; }
+  /* Alert cash (importe a cobrar) más visible en calle */
+  .route-board .cash-alert,
+  .route-board [data-cash-alert] {
+    font-size: 1rem !important;
+    font-weight: 900 !important;
+    padding: .55rem .7rem;
+    border-radius: 10px;
+    background: color-mix(in srgb, #ef4444 15%, #fff) !important;
+    color: #b02020 !important;
+    border: 1.5px solid color-mix(in srgb, #ef4444 40%, transparent);
+  }
 }
 
 /* Móvil operativo: una pantalla de decisiones, no un informe. Se conserva
