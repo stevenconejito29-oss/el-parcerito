@@ -23,6 +23,64 @@
     </div>
   </header>
 
+  {# ── Salud del sistema — pills clickables ────────────────── #}
+  {% set _hm_bot_ok = bot_status and bot_status.ok and bot_status.connected %}
+  {% set _hm_fr = (delivery_modes.franjas if delivery_modes is defined else false) %}
+  {% set _hm_fs = franja_stats or {'total_futuras':0} %}
+  <section class="sa-health-strip" aria-label="Estado del sistema">
+    <a href="{{ url_for('superadmin.chatbot') }}"
+       class="sa-health-pill sa-health-pill--{{ 'ok' if _hm_bot_ok else 'err' }}">
+      <span class="sa-health-pill__dot"></span>
+      <span class="sa-health-pill__icon" aria-hidden="true">💬</span>
+      <span class="sa-health-pill__label">
+        <strong>WhatsApp</strong>
+        <small>{{ 'Bot conectado' if _hm_bot_ok else 'Sin conectar' }}</small>
+      </span>
+    </a>
+
+    {% if brand.delivery %}
+    <a href="{{ url_for('superadmin.dashboard') }}#reparto"
+       class="sa-health-pill sa-health-pill--{{ 'warn' if (_hm_fr and _hm_fs.total_futuras == 0) else 'ok' }}">
+      <span class="sa-health-pill__dot"></span>
+      <span class="sa-health-pill__icon" aria-hidden="true">{{ '📅' if _hm_fr else '⚡' }}</span>
+      <span class="sa-health-pill__label">
+        <strong>Reparto</strong>
+        <small>{% if _hm_fr %}Franjas{% if _hm_fs.total_futuras == 0 %} · sin crear{% else %} · {{ _hm_fs.total_futuras }} próximas{% endif %}{% else %}Inmediato{% endif %}</small>
+      </span>
+    </a>
+
+    <a href="{{ url_for('superadmin.zonas') }}"
+       class="sa-health-pill sa-health-pill--{{ 'ok' if zonas_activas_count > 0 else 'warn' }}">
+      <span class="sa-health-pill__dot"></span>
+      <span class="sa-health-pill__icon" aria-hidden="true">🗺️</span>
+      <span class="sa-health-pill__label">
+        <strong>Zonas</strong>
+        <small>{{ zonas_activas_count }} activa{{ '' if zonas_activas_count == 1 else 's' }}</small>
+      </span>
+    </a>
+    {% endif %}
+
+    <a href="{{ url_for('superadmin.config', section='acceso-clientes') }}#acceso"
+       class="sa-health-pill sa-health-pill--{{ 'brand' if private_store else 'ok' }}">
+      <span class="sa-health-pill__dot"></span>
+      <span class="sa-health-pill__icon" aria-hidden="true">{{ '🔒' if private_store else '🌐' }}</span>
+      <span class="sa-health-pill__label">
+        <strong>Tienda</strong>
+        <small>{{ 'Privada' if private_store else 'Pública' }}{% if private_store %} · {{ authorised_customers }} auth.{% endif %}</small>
+      </span>
+    </a>
+
+    <a href="{{ url_for('superadmin.database_admin') }}"
+       class="sa-health-pill sa-health-pill--ok">
+      <span class="sa-health-pill__dot"></span>
+      <span class="sa-health-pill__icon" aria-hidden="true">💾</span>
+      <span class="sa-health-pill__label">
+        <strong>Respaldo</strong>
+        <small>Ver estado</small>
+      </span>
+    </a>
+  </section>
+
   <section class="sa-access-card" aria-labelledby="store-access-title">
     <div>
       <h2 id="store-access-title">Tienda {{ 'privada' if private_store else 'pública' }}</h2>

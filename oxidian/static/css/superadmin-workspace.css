@@ -28,6 +28,101 @@
 .sa-access-card form { display:flex; flex-wrap:wrap; align-items:center; gap:.65rem; }
 .sa-access-card button, .sa-access-card a { min-height:44px; white-space:normal; }
 
+/* ── Health strip: pills clickables con estado del sistema ─────────────── */
+.sa-health-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: .55rem;
+  margin: 0 0 1rem;
+}
+.sa-health-pill {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  padding: .6rem .75rem;
+  background: var(--col-surface);
+  border: 1px solid var(--col-border);
+  border-radius: 12px;
+  text-decoration: none;
+  color: var(--col-text);
+  transition: transform .12s, box-shadow .12s, border-color .12s, background .12s;
+  min-height: 56px;
+  overflow: hidden;
+}
+.sa-health-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--brand-primary) 15%, transparent);
+  border-color: color-mix(in srgb, var(--brand-primary) 35%, var(--col-border));
+}
+.sa-health-pill:active { transform: translateY(0); }
+.sa-health-pill__dot {
+  position: absolute;
+  top: .55rem; right: .6rem;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--col-surface);
+}
+.sa-health-pill__icon {
+  font-size: 1.35rem;
+  line-height: 1;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 34px; height: 34px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--brand-primary) 10%, var(--col-elevated));
+}
+.sa-health-pill__label {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.sa-health-pill__label strong {
+  font-size: .78rem;
+  font-weight: 900;
+  color: var(--col-text);
+  line-height: 1.1;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.sa-health-pill__label small {
+  font-size: .72rem;
+  color: var(--col-muted);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Estados */
+.sa-health-pill--ok .sa-health-pill__dot { background: #5EF097; box-shadow: 0 0 0 2px var(--col-surface), 0 0 8px color-mix(in srgb, #5EF097 60%, transparent); }
+.sa-health-pill--ok .sa-health-pill__icon { background: color-mix(in srgb, #5EF097 15%, var(--col-elevated)); }
+.sa-health-pill--warn .sa-health-pill__dot { background: #FFAB00; box-shadow: 0 0 0 2px var(--col-surface), 0 0 8px color-mix(in srgb, #FFAB00 60%, transparent); animation: sa-hp-pulse 2s ease-in-out infinite; }
+.sa-health-pill--warn .sa-health-pill__icon { background: color-mix(in srgb, #FFAB00 18%, var(--col-elevated)); }
+.sa-health-pill--warn { border-color: color-mix(in srgb, #FFAB00 40%, var(--col-border)); }
+.sa-health-pill--err .sa-health-pill__dot { background: #FF5470; box-shadow: 0 0 0 2px var(--col-surface), 0 0 8px color-mix(in srgb, #FF5470 60%, transparent); animation: sa-hp-pulse 1.5s ease-in-out infinite; }
+.sa-health-pill--err .sa-health-pill__icon { background: color-mix(in srgb, #FF5470 18%, var(--col-elevated)); }
+.sa-health-pill--err { border-color: color-mix(in srgb, #FF5470 40%, var(--col-border)); }
+.sa-health-pill--brand .sa-health-pill__dot { background: var(--brand-primary); box-shadow: 0 0 0 2px var(--col-surface), 0 0 8px color-mix(in srgb, var(--brand-primary) 60%, transparent); }
+.sa-health-pill--brand .sa-health-pill__icon { background: color-mix(in srgb, var(--brand-primary) 20%, var(--col-elevated)); }
+.sa-health-pill--brand { border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--col-border)); }
+
+@keyframes sa-hp-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .55; transform: scale(.85); }
+}
+
+@media (max-width: 480px) {
+  .sa-health-strip { grid-template-columns: repeat(2, 1fr); gap: .4rem; }
+  .sa-health-pill { padding: .5rem .55rem; min-height: 50px; }
+  .sa-health-pill__icon { width: 30px; height: 30px; font-size: 1.15rem; }
+  .sa-health-pill__label strong { font-size: .7rem; }
+  .sa-health-pill__label small { font-size: .65rem; }
+}
+
 /* ── Panel "Modo de reparto" v6 ─────────────────────────────────────────── */
 .sa-reparto-panel {
   padding: 1rem 1.15rem;

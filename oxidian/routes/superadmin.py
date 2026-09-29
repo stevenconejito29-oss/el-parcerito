@@ -978,6 +978,11 @@ def dashboard():
         CustomerAccessGrant.activo.is_(True), User.activo.is_(True), User.rol == "cliente",
     ).count()
 
+    # ── Zonas activas: contador rápido para el health strip ──
+    zonas_activas_count = 0
+    if features["delivery"]:
+        zonas_activas_count = ZonaEntrega.query.filter_by(activo=True).count()
+
     # ── Franjas de reparto: stats rápidas para el panel "Modo de reparto" ──
     franja_stats = {"hoy": 0, "manana": 0, "proximas_7d": 0, "total_futuras": 0}
     if features["delivery"]:
@@ -1020,6 +1025,7 @@ def dashboard():
                            private_store=private_store_enabled(),
                            authorised_customers=authorised_customers,
                            franja_stats=franja_stats,
+                           zonas_activas_count=zonas_activas_count,
                            vertical_just_changed=session.pop("vertical_just_changed", None))
 
 
