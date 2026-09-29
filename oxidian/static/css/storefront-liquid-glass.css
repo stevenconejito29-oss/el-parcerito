@@ -1683,6 +1683,103 @@ body.ox-body-public :is(.cr-wrap, .checkout-layout, .pd-detail, .ep-page) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   COMBO STEP — refuerzo visual final (pasos hechos se colapsan más,
+   paso activo se destaca más, textos sin desbordar nunca).
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Paso HECHO: header más compacto para ahorrar vertical */
+body.ox-body-public .pd-cstep.is-done > .pd-cstep-hd {
+  padding-block: 6px !important;
+  min-height: auto !important;
+}
+body.ox-body-public .pd-cstep.is-done .pd-cstep-ttl {
+  font-size: clamp(.82rem, .75rem + .3vw, .95rem) !important;
+  margin: 0 !important;
+}
+body.ox-body-public .pd-cstep.is-done .pd-cstep-sub {
+  display: none !important; /* Sub-título oculto en pasos hechos → menos ruido */
+}
+
+/* Paso ACTIVO: el título con más protagonismo */
+body.ox-body-public .pd-cstep.is-active .pd-cstep-ttl {
+  color: var(--brand-primary) !important;
+}
+
+/* pd-cstep-body: transición suave al colapsar/expandir */
+body.ox-body-public .pd-cstep-body {
+  transition: max-height .3s cubic-bezier(.4, 0, .2, 1), padding .2s;
+  overflow: hidden;
+}
+body.ox-body-public .pd-cstep.is-done .pd-cstep-body {
+  max-height: 0 !important;
+  padding-block: 0 !important;
+  overflow: hidden !important;
+}
+
+/* pd-cstep-progress (hint) en móvil pequeño */
+@media (max-width: 380px) {
+  body.ox-body-public .pd-cstep-progress {
+    font-size: .72rem !important;
+    padding: 6px 8px !important;
+  }
+}
+
+/* Tab bar bottom con hint franja del día */
+body.ox-body-public .df-day-picker {
+  display: block;
+  margin-bottom: 8px;
+}
+body.ox-body-public .df-day-picker select {
+  width: 100% !important;
+  min-height: 44px !important;
+  padding: 8px 28px 8px 12px !important;
+  border: 1.5px solid var(--lg-glass-border-strong) !important;
+  border-radius: var(--lg-radius-sm) !important;
+  font-size: 16px !important;
+  background: color-mix(in srgb, var(--theme-surface) 92%, transparent) !important;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+body.ox-body-public .df-slot-list {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr)) !important;
+  gap: 8px !important;
+}
+body.ox-body-public .df-slot {
+  padding: 10px 12px !important;
+  border-radius: var(--lg-radius-sm) !important;
+  border: 1.5px solid var(--lg-glass-border-strong) !important;
+  background: color-mix(in srgb, var(--theme-surface) 88%, transparent) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 3px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, transform .1s;
+  min-height: 60px !important;
+}
+body.ox-body-public .df-slot:hover {
+  border-color: color-mix(in srgb, var(--brand-primary) 55%, transparent) !important;
+}
+body.ox-body-public .df-slot:active { transform: scale(.98); }
+body.ox-body-public .df-slot.df-slot-selected,
+body.ox-body-public .df-slot:has(input:checked) {
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--brand-primary) 15%, var(--theme-surface)),
+    color-mix(in srgb, var(--brand-primary) 8%, var(--theme-surface))) !important;
+  border-color: var(--brand-primary) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand-primary) 22%, transparent);
+}
+body.ox-body-public .df-slot strong {
+  font-size: .9rem !important;
+  color: var(--theme-text) !important;
+}
+body.ox-body-public .df-slot small {
+  font-size: .72rem !important;
+  color: color-mix(in srgb, var(--theme-text) 62%, transparent) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    COMBO: "Configura cada unidad" — pd-combo-units fieldset
    Feedback: sin responsividad. Estilizamos fieldset + legend + rows +
    fields + selects con clamp + wrap fuerte + touch targets.

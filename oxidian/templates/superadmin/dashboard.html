@@ -349,9 +349,36 @@
       {% endfor %}
     </div>
     {% if brand.delivery %}
+    {# Estado actual del modo de reparto + botón para intercambiar.
+       Mutex real: uno u otro, nunca ambos. Backend
+       /superadmin/modo-reparto/switch cambia el toggle atómicamente. #}
+    {% set _in = (delivery_modes.inmediato if delivery_modes is defined else true) %}
+    {% set _fr = (delivery_modes.franjas if delivery_modes is defined else false) %}
+    <div class="oa-panel" style="margin-top:.9rem;padding:.85rem 1rem;border-radius:14px;background:color-mix(in srgb, var(--brand-primary) 5%, var(--col-surface));border:1px solid color-mix(in srgb, var(--brand-primary) 22%, var(--col-border));">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+        <div>
+          <p style="margin:0;font-weight:900;font-size:.82rem;color:var(--brand-primary);letter-spacing:.06em;text-transform:uppercase;">Modo de reparto</p>
+          <p style="margin:.15rem 0 0;font-size:.98rem;font-weight:800;color:var(--col-text);">
+            {% if _fr %}📅 Franjas horarias{% else %}⚡ Delivery inmediato{% endif %}
+          </p>
+          <p style="margin:.1rem 0 0;font-size:.72rem;color:var(--col-muted);">
+            {% if _fr %}Cliente reserva día + franja. Sistema sugiere la más cercana con cupo.
+            {% else %}Sale en cuanto esté listo. Sin reserva de horario.{% endif %}
+          </p>
+        </div>
+        <form method="POST" action="{{ url_for('superadmin.modo_reparto_switch') }}" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="oa-btn oa-btn--secondary oa-btn--sm" data-confirm="¿Cambiar el modo de reparto? Se aplicará al próximo pedido.">
+            Cambiar a {% if _fr %}⚡ inmediato{% else %}📅 franjas{% endif %}
+          </button>
+        </form>
+      </div>
+    </div>
+    {% if _fr %}
     <p class="oa-section__sub" style="margin-top:.6rem">
       <a href="{{ url_for('superadmin.franjas_live') }}">Ver franjas de reparto en vivo →</a>
     </p>
+    {% endif %}
     {% endif %}
   </section>
 
