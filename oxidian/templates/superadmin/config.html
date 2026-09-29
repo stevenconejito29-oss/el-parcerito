@@ -724,6 +724,64 @@ document.querySelectorAll('.cfg-nav a').forEach(link => link.addEventListener('c
 window.addEventListener('hashchange', () => cfgShowMobileSection(location.hash.slice(1)));
 cfgShowMobileSection(location.hash.slice(1) || new URLSearchParams(location.search).get('section') || 'tienda');
 
+// ── Scroll-spy desktop: resalta el nav según sección visible ─────
+(function cfgScrollSpy(){
+  if (!window.IntersectionObserver) return;
+  const mq = window.matchMedia('(min-width: 761px)');
+  const links = [...document.querySelectorAll('.cfg-nav a')];
+  const sections = [...document.querySelectorAll('.cfg-section[id]')];
+  if (!links.length || !sections.length) return;
+  const setCurrent = (id) => links.forEach(l => l.classList.toggle('cfg-nav-current', l.hash === '#' + id));
+  const io = new IntersectionObserver((entries) => {
+    if (!mq.matches) return;
+    const visible = entries
+      .filter(e => e.isIntersecting)
+      .sort((a,b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (visible && visible.target.id) setCurrent(visible.target.id);
+  }, { rootMargin: '-30% 0px -55% 0px', threshold: [0, 0.25, 0.5, 0.75, 1] });
+  sections.forEach(s => io.observe(s));
+})();
+
+// ── Estado "sin guardar" por sección ─────────────────────────────
+(function cfgDirtyState(){
+  const sections = [...document.querySelectorAll('.cfg-section[id]')];
+  const linkFor = (id) => document.querySelector(`.cfg-nav a[href="#${id}"]`);
+  sections.forEach(section => {
+    const id = section.id;
+    // Cualquier input/textarea/select dentro marca la sección como sucia
+    section.addEventListener('input', (e) => {
+      if (!e.target.matches('input, textarea, select')) return;
+      // Ignora el buscador
+      if (e.target.id === 'cfg-search-input') return;
+      section.classList.add('cfg-dirty');
+      linkFor(id)?.classList.add('cfg-nav-dirty');
+    });
+    // Al enviar cualquier form dentro, limpiamos el estado
+    section.querySelectorAll('form').forEach(f => {
+      f.addEventListener('submit', () => {
+        section.classList.remove('cfg-dirty');
+        linkFor(id)?.classList.remove('cfg-nav-dirty');
+      });
+    });
+  });
+  // Aviso al salir si hay cambios sin guardar
+  window.addEventListener('beforeunload', (e) => {
+    if (document.querySelector('.cfg-section.cfg-dirty')) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+})();
+
+// ── Atajo teclado: "/" enfoca la búsqueda ────────────────────────
+document.addEventListener('keydown', (e) => {
+  if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = document.activeElement;
+  if (t && ['INPUT','TEXTAREA','SELECT'].includes(t.tagName)) return;
+  const input = document.getElementById('cfg-search-input');
+  if (input) { e.preventDefault(); input.focus(); input.select(); }
+});
+
 // ── Búsqueda instantánea de ajustes ───────────────────────────────
 (function cfgSearch(){
   const input = document.getElementById('cfg-search-input');
@@ -844,5 +902,54 @@ cfgShowMobileSection(location.hash.slice(1) || new URLSearchParams(location.sear
 .cfg-field.cfg-hide { display: none !important; }
 .cfg-section.cfg-section-hidden { display: none !important; }
 .cfg-nav a.cfg-nav-dim { opacity: .35; }
+
+/* Scroll-spy: sección visible en el nav */
+.cfg-nav a.cfg-nav-current {
+  background: color-mix(in srgb, var(--col-gold) 90%, transparent);
+  color: #241500;
+}
+
+/* Estado "sin guardar": punto ámbar junto al link + borde en la sección */
+.cfg-nav a.cfg-nav-dirty {
+  position: relative;
+}
+.cfg-nav a.cfg-nav-dirty::after {
+  content: '';
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #FFAB00;
+  margin-left: .35rem;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #FFAB00 30%, transparent);
+  vertical-align: middle;
+  animation: cfg-dirty-pulse 1.8s ease-in-out infinite;
+}
+@keyframes cfg-dirty-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .55; }
+}
+.cfg-section.cfg-dirty {
+  border-color: color-mix(in srgb, #FFAB00 45%, var(--col-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, #FFAB00 12%, transparent);
+}
+
+/* Hint del atajo "/" en la barra de búsqueda */
+.cfg-search::before {
+  content: '/';
+  position: absolute;
+  right: 48px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: .7rem;
+  font-weight: 800;
+  color: var(--col-muted);
+  background: var(--col-elevated);
+  padding: 2px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+  opacity: .8;
+}
+.cfg-search:focus-within::before { display: none; }
+@media (max-width: 480px) { .cfg-search::before { display: none; } }
 </style>
 {% endblock %}
