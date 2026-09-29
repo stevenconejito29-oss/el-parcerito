@@ -21,7 +21,7 @@ from flask import (
 from flask_login import current_user, login_required
 
 from models import AiAdvisorConversation, AuditLog, db
-from services import ai_advisor
+from ai_services import ai_advisor
 
 
 superadmin_ai_bp = Blueprint("superadmin_ai", __name__)
