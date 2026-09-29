@@ -3689,6 +3689,19 @@ def cancelar_pedido_web(pedido_id):
     if pedido.estado != "pendiente" or pedido.pago_confirmado:
         flash("El pedido ya requiere revisión del equipo. Solicítala desde el chat.", "warning")
         return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id))
+    # Ventana de autoservicio: 5 minutos desde la creación. Después de eso el
+    # equipo ya empezó a organizar el pedido y la cancelación pasa por chat
+    # para evitar rollbacks operativos costosos (stock, franjas, kitchen).
+    from datetime import timedelta
+    ventana_autoservicio = timedelta(minutes=5)
+    edad_pedido = _utcnow() - pedido.creado_en if pedido.creado_en else timedelta(0)
+    if edad_pedido > ventana_autoservicio:
+        flash(
+            "Pasaron más de 5 minutos desde el pedido. El equipo ya está trabajando; "
+            "abrí el chat para pedir una cancelación asistida.",
+            "warning",
+        )
+        return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id))
     try:
         cancelar_pedido_operativo(
             pedido,

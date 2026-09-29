@@ -109,6 +109,7 @@ def enviar_mensaje(conv_id: int):
         if conv.categoria == "general":
             conv.categoria = ai_advisor.QUICK_ACTIONS[quick_action]["categoria"]
             db.session.add(conv)
+            db.session.flush()  # persistir cambio de categoría antes de continuar
     else:
         prompt = (request.form.get("mensaje") or "").strip()
 
@@ -116,6 +117,27 @@ def enviar_mensaje(conv_id: int):
         if request.headers.get("Accept") == "application/json":
             return jsonify({"ok": False, "error": "mensaje_vacio"}), 400
         flash("Escribí tu pregunta o elegí una acción rápida.", "warning")
+        return redirect(url_for("superadmin_ai.index", conv=conv.id))
+
+    # Rate limit simple: máx 10 preguntas/minuto por usuario para no saturar el
+    # proveedor externo. Se cuenta sobre AiAdvisorMessage con role=user.
+    from datetime import datetime as _dt, timedelta
+    from models import AiAdvisorMessage
+    ventana = _dt.utcnow() - timedelta(minutes=1)
+    recientes = (
+        db.session.query(AiAdvisorMessage)
+        .join(AiAdvisorConversation, AiAdvisorMessage.conversacion_id == AiAdvisorConversation.id)
+        .filter(
+            AiAdvisorConversation.owner_id == current_user.id,
+            AiAdvisorMessage.role == "user",
+            AiAdvisorMessage.created_at >= ventana,
+        )
+        .count()
+    )
+    if recientes >= 10:
+        if request.headers.get("Accept") == "application/json":
+            return jsonify({"ok": False, "error": "rate_limit"}), 429
+        flash("Vas muy rápido — máximo 10 preguntas por minuto. Esperá un momento.", "warning")
         return redirect(url_for("superadmin_ai.index", conv=conv.id))
 
     respuesta = ai_advisor.preguntar(conv, prompt, quick_action=quick_action)

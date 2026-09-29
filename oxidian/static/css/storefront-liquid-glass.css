@@ -2954,3 +2954,102 @@ html body.ox-body-public .pd-combo-opt-sold {
     min-width: 42px !important;
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   COMBO ITEM v8 — layout robusto para pd-combo-item (base y grupos)
+   Los productos "incluidos" (paso 1) y los grupos con `pd-combo-item`
+   usan grid `42px 2rem minmax(0,1fr) auto`. En viewports ≤400px la
+   columna `auto` del tag "Incluido" se solapaba con el nombre porque
+   el body no podía comprimirse. Este bloque colapsa el layout a 2
+   columnas (thumb + body) y baja el tag / cantidad al flujo del body.
+   ══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 400px) {
+  html body.ox-body-public .pd-cstep-body > .pd-combo-item {
+    grid-template-columns: 46px minmax(0, 1fr) !important;
+    grid-auto-rows: auto;
+    gap: 8px !important;
+    padding: 10px !important;
+    align-items: center;
+  }
+  html body.ox-body-public .pd-cstep-body > .pd-combo-item .pd-combo-thumb {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    width: 46px !important;
+    height: 46px !important;
+    min-width: 46px !important;
+    align-self: start;
+    font-size: 1.35rem !important;
+  }
+  /* La cantidad "N×" pasa a un pill inline con el nombre en vez de columna */
+  html body.ox-body-public .pd-cstep-body > .pd-combo-item .pd-combo-qty {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: start;
+    display: inline-block;
+    margin: 0 6px 0 0;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--brand-primary) 15%, var(--theme-surface));
+    color: color-mix(in srgb, var(--brand-primary) 78%, var(--theme-text));
+    font-size: .72rem;
+    font-weight: 900;
+    line-height: 1.2;
+    width: fit-content;
+  }
+  html body.ox-body-public .pd-cstep-body > .pd-combo-item .pd-combo-item-info {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0 !important;
+    margin-left: 44px; /* deja hueco para el pill de qty */
+  }
+  /* Tag "Incluido" a fila propia debajo del nombre */
+  html body.ox-body-public .pd-cstep-body > .pd-combo-item .pd-combo-tag {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: start;
+    max-width: 100%;
+    padding: 3px 8px;
+    font-size: .68rem;
+    line-height: 1.2;
+    white-space: normal;
+    margin: 2px 0 0;
+  }
+  /* Sub-configuradores (units, flavor, presentation) siempre full row */
+  html body.ox-body-public .pd-cstep-body > .pd-combo-item .pd-combo-units,
+  html body.ox-body-public .pd-cstep-body > .pd-combo-item .pd-combo-flavor,
+  html body.ox-body-public .pd-cstep-body > .pd-combo-item .pd-combo-presentation {
+    grid-column: 1 / -1 !important;
+    grid-row: auto;
+    margin-top: 4px;
+  }
+  /* Nombre y desc con wrap fuerte para no romperse en char-por-char */
+  html body.ox-body-public .pd-combo-item-name,
+  html body.ox-body-public .pd-combo-item-desc {
+    overflow-wrap: anywhere !important;
+    word-break: normal !important;
+    hyphens: auto;
+    line-height: 1.3 !important;
+    max-width: 100% !important;
+  }
+}
+
+/* Unit rows (configurar cada unidad) — colapso robusto en móviles chicos */
+@media (max-width: 380px) {
+  html body.ox-body-public .pd-combo-unit-row {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 6px !important;
+    padding: 8px !important;
+  }
+  html body.ox-body-public .pd-combo-unit-label {
+    grid-column: auto !important;
+    margin-bottom: 4px;
+  }
+  html body.ox-body-public .pd-combo-unit-field {
+    grid-column: auto !important;
+    width: 100%;
+  }
+  html body.ox-body-public .pd-combo-unit-field select {
+    width: 100%;
+    min-height: 42px;
+  }
+}

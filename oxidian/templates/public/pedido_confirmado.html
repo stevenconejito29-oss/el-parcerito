@@ -254,10 +254,18 @@
     </a>
     <a href="{{ url_for('public.chat') }}" class="order-action order-action--whatsapp">💬 Consultar en el chat</a>
     {% if puede_cancelar %}
+    {# Doble-tap con countdown 7s para prevenir cancelaciones accidentales.
+       El submit real solo se dispara si se confirma dentro de la ventana. #}
     <form method="post" action="{{ url_for('public.cancelar_pedido_web', pedido_id=pedido.id) }}"
-          data-confirm="¿Cancelar este pedido? Se liberarán productos, cupones y cafecitos asociados.">
+          id="order-cancel-form" data-cancel-form>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="order-action order-action--cancel">Cancelar pedido</button>
+      <button type="button" class="order-action order-action--cancel" data-cancel-btn
+              data-label-idle="Cancelar pedido"
+              data-label-arm="Toca de nuevo para cancelar ({s}s)"
+              data-label-fire="Cancelando…">Cancelar pedido</button>
+      <p class="order-cancel-hint" data-cancel-hint hidden>
+        Estás a un toque de cancelar. Si no querés cancelar, esperá y este botón se restablece solo.
+      </p>
     </form>
     {% elif pedido.estado not in ('entregado', 'cancelado') %}
     <p class="order-cancel-guidance">Este pedido ya está en operación. Para cambios o cancelación, abre el chat y solicita atención del equipo.</p>
@@ -265,6 +273,51 @@
   </div>
 
 </div>
+
+<script nonce="{{ csp_nonce() }}">
+// Doble-tap + countdown para cancelar pedido. Reduce cancelaciones accidentales.
+(function(){
+  const btn = document.querySelector('[data-cancel-btn]');
+  const form = document.querySelector('[data-cancel-form]');
+  const hint = document.querySelector('[data-cancel-hint]');
+  if (!btn || !form) return;
+  const WINDOW_S = 7;
+  let armed = false;
+  let remaining = WINDOW_S;
+  let intervalId = null;
+  const labelIdle = btn.dataset.labelIdle || 'Cancelar pedido';
+  const labelArm  = btn.dataset.labelArm  || 'Toca de nuevo ({s}s)';
+  const labelFire = btn.dataset.labelFire || 'Cancelando…';
+  function disarm(){
+    armed = false; remaining = WINDOW_S;
+    if (intervalId) { clearInterval(intervalId); intervalId = null; }
+    btn.textContent = labelIdle;
+    btn.classList.remove('is-armed');
+    if (hint) hint.hidden = true;
+  }
+  function tick(){
+    remaining -= 1;
+    if (remaining <= 0) { disarm(); return; }
+    btn.textContent = labelArm.replace('{s}', String(remaining));
+  }
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!armed) {
+      armed = true; remaining = WINDOW_S;
+      btn.textContent = labelArm.replace('{s}', String(remaining));
+      btn.classList.add('is-armed');
+      if (hint) hint.hidden = false;
+      intervalId = setInterval(tick, 1000);
+      return;
+    }
+    // Segundo tap dentro de la ventana → confirma y envía
+    if (intervalId) clearInterval(intervalId);
+    btn.textContent = labelFire;
+    btn.disabled = true;
+    form.submit();
+  });
+})();
+</script>
 
 {% endblock %}
 {% block scripts %}<script nonce="{{ csp_nonce() }}" src="{{ url_for('static',filename='js/order-status.js',v=asset_version) }}" defer></script>{% endblock %}

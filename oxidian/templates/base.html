@@ -1,7 +1,9 @@
 <!DOCTYPE html>
 {% from 'partials/heritage_icons.html' import heritage_icon, loyalty_icon %}
-<html lang="es">
+<html lang="es" translate="no">
 <head>
+  <meta name="google" content="notranslate">
+  <meta http-equiv="Content-Language" content="es">
   {% if private_app_required %}
   <style id="private-app-veil">html { visibility:hidden !important; }</style>
   <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/private-app-guard.js', v=asset_version) }}"></script>
@@ -243,7 +245,7 @@
      Si el usuario abre "Ver código fuente" en el navegador y ve este
      comentario, confirma que la HTML llegó fresh del server. Si no lo
      ve, el navegador está sirviendo HTML cacheado. #}
-  <!-- oxidian-ui-build: 2026-09-29-v13 · liquid-glass · sa-health-strip · combo-opcion-grid-fix · confirm-wa-race-guarded · ai-asesor-chat -->
+  <!-- oxidian-ui-build: 2026-09-29-v14 · liquid-glass · sa-health-strip · combo-item-v8 · cancel-doubletap · push-guest-ok · ai-ratelimit · notranslate -->
   {# Meta cache-control agresivo: fuerza al navegador y proxies a revalidar
      el HTML en cada visita. El HTML es network-first en el SW; aquí lo
      reforzamos por si el navegador ignora la política del SW. #}

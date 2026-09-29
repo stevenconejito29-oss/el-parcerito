@@ -53,10 +53,23 @@ def _push_user():
 
 
 def _push_allowed(user):
-    """Una visita pública puede registrar su dispositivo sin crear un cliente."""
+    """Una visita pública puede registrar su dispositivo sin crear un cliente.
+
+    Además, un visitante con al menos un token de pedido activo en la sesión
+    (guest_order_tokens) tiene identidad suficiente para activar avisos —
+    aunque la tienda sea privada — porque el pedido ya fue creado y
+    autorizado. Esto habilita "Activar avisos del pedido" en el ticket
+    digital para clientes anónimos.
+    """
     from customer_access import private_store_enabled
     if user:
         return True
+    try:
+        from order_access import visitor_order_tokens
+        if visitor_order_tokens():
+            return True
+    except Exception:
+        pass
     return not (private_store_enabled() or current_user.is_authenticated or session.get("push_cliente_id"))
 
 
