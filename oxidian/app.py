@@ -602,7 +602,7 @@ def create_app(env="default"):
         import time
         return {
             "asset_version": app.config.get("ASSET_VERSION", ""),
-            "ui_build": "2026-09-29-v15 · liquid-glass · combo-item-v8 · cancel-doubletap · ai-insights-engine · admin-mobile-fixes",
+            "ui_build": "2026-09-29-v16 · ai-insights-engine · admin-mobile-fixes · ai-api-setup · franjas-hero · chat-franjas-explica",
             "server_time": time.strftime("%Y-%m-%d %H:%M:%S %Z"),
             "note": "Si esta fecha es reciente pero la app se ve vieja, es cache del navegador. Purga y recarga.",
         }, 200

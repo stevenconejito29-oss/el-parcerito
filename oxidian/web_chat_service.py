@@ -36,7 +36,7 @@ _INTENT_TERMS = {
     "cancel": {"cancelar", "cancelo", "anular", "anulo"},
     "tracking": {"estado", "seguimiento", "tracking", "repartidor", "demora", "tarda", "llega"},
     "delivery": {"delivery", "envio", "envios", "domicilio", "domicilios", "cobertura", "zona", "reparto"},
-    "delivery_schedule": {"franja", "franjas", "programar", "programado", "hora", "horas", "fecha"},
+    "delivery_schedule": {"franja", "franjas", "programar", "programado", "hora", "horas", "fecha", "cita", "cuando llega", "cuándo llega", "a que hora", "a qué hora", "reservar", "reserva", "salida", "reparto", "envio", "envío"},
     "favor": {"cruce", "favor", "mandado", "objeto", "paquete"},
     "loyalty": {"cafecito", "cafecitos", "punto", "puntos", "grano", "granitos", "canje", "canjear"},
     "hours": {"horario", "horarios", "abren", "abrir", "cierran", "cerrar", "abierto", "cerrado"},

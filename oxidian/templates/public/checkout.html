@@ -225,23 +225,34 @@
       </div>
     </fieldset>
     {% endif %}
-    <div id="franjas-slot-block" class="mb-3" data-url="{{ url_for('public.api_delivery_franjas_disponibles') }}" data-active="{{ '1' if delivery_modes.franjas else '0' }}" data-immediate="{{ '1' if delivery_modes.inmediato else '0' }}" hidden>
-      <h3 class="text-sm font-extrabold mb-2 flex items-center gap-2" style="margin-top:.75rem">
-        <span aria-hidden="true">🕒</span>
-        Elige una salida de reparto
-      </h3>
-      <p class="text-xs mb-2" style="color:var(--col-muted)">
-        Te proponemos la próxima franja con cupo. Puedes cambiarla; la reserva se confirma al enviar el pedido.
-      </p>
-      <p class="text-xs mb-2" style="color:var(--col-muted)">Los pedidos esperan a la salida de reparto. La llegada a tu domicilio depende de la ruta y la distancia entre paradas; la franja no es una cita a una hora exacta.</p>
-      <label class="df-day-picker" for="franjas-day">Día de entrega
+    <div id="franjas-slot-block" class="mb-3 df-hero" data-url="{{ url_for('public.api_delivery_franjas_disponibles') }}" data-active="{{ '1' if delivery_modes.franjas else '0' }}" data-immediate="{{ '1' if delivery_modes.inmediato else '0' }}" hidden>
+      <div class="df-hero-head">
+        <span class="df-hero-icon" aria-hidden="true">📅</span>
+        <div>
+          <h3 class="df-hero-title">Reserva tu franja de reparto</h3>
+          <p class="df-hero-sub">Elegimos automáticamente la más cercana con cupo. Puedes cambiarla antes de confirmar.</p>
+        </div>
+      </div>
+
+      <details class="df-hero-info">
+        <summary>¿Cómo funcionan las franjas?</summary>
+        <ul>
+          <li><strong>Ventana de reparto, no cita exacta.</strong> La franja indica el rango en que sale la ruta desde el negocio.</li>
+          <li><strong>El pedido se prepara y espera</strong> hasta el inicio de la franja para salir junto al resto de la ruta.</li>
+          <li><strong>La llegada exacta a tu domicilio</strong> depende del orden de las paradas y la distancia entre ellas.</li>
+          <li><strong>Cada franja tiene cupo limitado</strong>: si se llena, se cierra y aparece la siguiente disponible.</li>
+        </ul>
+      </details>
+
+      <label class="df-day-picker" for="franjas-day"><span class="df-picker-label">📆 Día de entrega</span>
         <select id="franjas-day"><option value="">Cargando días disponibles…</option></select>
       </label>
+      <p class="df-slot-list-label">🕒 Horario</p>
       <div id="franjas-slot-container" class="df-slot-list" role="radiogroup" aria-label="Franja de reparto"></div>
       <p id="franjas-slot-error" role="alert" hidden></p>
       <button id="franjas-slot-retry" class="ox-btn-secondary" type="button" hidden>Volver a cargar horarios</button>
       <input type="hidden" name="slot_id" id="franjas-slot-id" value="">
-      <p id="franjas-slot-selected" class="text-xs mt-2" style="color:var(--brand-primary,#5a3a1e);font-weight:700" hidden></p>
+      <p id="franjas-slot-selected" class="df-slot-selected-summary" hidden></p>
     </div>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/delivery-franjas.css', v=asset_version) }}">
     <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/delivery-franjas.js', v=asset_version) }}"></script>

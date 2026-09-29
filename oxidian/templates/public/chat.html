@@ -20,6 +20,7 @@
     <div class="wcp-quick" id="wcp-quick" aria-label="Preguntas rápidas">
       <button type="button" data-wcp-quick="¿Cuál es el horario?"><span>🕐</span>Horario</button>
       {% if brand.delivery %}<button type="button" data-wcp-quick="¿Cómo funciona el delivery?"><span>🛵</span>Delivery</button>{% endif %}
+      {% if brand.delivery and delivery_modes and delivery_modes.franjas %}<button type="button" data-wcp-quick="¿Cómo funcionan las franjas horarias y a qué hora llega mi pedido?"><span>📅</span>Franjas horarias</button>{% endif %}
       {% if brand.puntos %}<button type="button" data-wcp-quick="¿Cómo funcionan {{ ui.loyalty_unit_plural }} y sus recompensas?"><span aria-hidden="true">{{ ui.loyalty_emoji }}</span>{{ ui.loyalty_name }}</button>{% endif %}
       <button type="button" data-wcp-quick="¿Qué formas de pago tienen?"><span>💵</span>Pagos</button>
       <button type="button" data-wcp-quick="¿Cómo hago un pedido paso a paso?"><span>🛍️</span>Cómo comprar</button>

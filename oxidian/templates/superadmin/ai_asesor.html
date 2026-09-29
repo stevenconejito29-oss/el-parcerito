@@ -16,11 +16,10 @@
         Preguntas sobre finanzas, combos, promociones, cupones y campañas
         con datos reales del negocio.
         Fuente:
-        {% if estado_ia.enabled and estado_ia.key_set %}
-          <strong>{{ estado_ia.provider_label }}{% if estado_ia.model %} · {{ estado_ia.model }}{% endif %}</strong>
+        {% if estado_ia.enabled and estado_ia.key_set and estado_ia.model %}
+          <strong class="ai-src-ok">✅ {{ estado_ia.provider_label }} · {{ estado_ia.model }}</strong>
         {% else %}
-          <strong>Motor local</strong>
-          <a href="{{ url_for('superadmin.config') }}#integraciones" class="ai-link-cfg">Configurar IA externa →</a>
+          <strong class="ai-src-local">⚠️ Motor local (sin API externa)</strong>
         {% endif %}
       </p>
     </div>
@@ -32,6 +31,66 @@
       </form>
     </div>
   </header>
+
+  {# ─── Panel de configuración rápida — visible cuando la IA externa NO
+     está totalmente configurada. Solo super_admin puede guardarlo. ── #}
+  {% if not (estado_ia.enabled and estado_ia.key_set and estado_ia.model) %}
+  <details class="ai-config-card" {% if not estado_ia.key_set %}open{% endif %}>
+    <summary>
+      <span class="ai-config-icon">🔌</span>
+      <div>
+        <strong>Conecta un modelo real para respuestas inteligentes</strong>
+        <small>Con motor local respondo con reglas; con API externa, análisis reales sobre tus datos.</small>
+      </div>
+      <span class="ai-config-chev">⌄</span>
+    </summary>
+    <form method="POST" action="{{ url_for('superadmin_ai.configurar_proveedor') }}" class="ai-config-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="ai-config-row">
+        <label class="ai-config-field">
+          <span>Proveedor</span>
+          <select name="provider" required>
+            <option value="groq" {% if estado_ia.provider == 'groq' %}selected{% endif %}>Groq (gratis, rápido) — recomendado</option>
+            <option value="anthropic" {% if estado_ia.provider == 'anthropic' %}selected{% endif %}>Anthropic Claude</option>
+            <option value="openai" {% if estado_ia.provider == 'openai' %}selected{% endif %}>OpenAI</option>
+          </select>
+        </label>
+        <label class="ai-config-field">
+          <span>Modelo <small>(dejalo vacío para default)</small></span>
+          <input type="text" name="model" value="{{ estado_ia.model }}" placeholder="llama-3.3-70b-versatile">
+        </label>
+      </div>
+
+      <label class="ai-config-field">
+        <span>API Key
+          {% if estado_ia.key_set %}<small class="ai-config-set">✔ ya hay una guardada</small>{% endif %}
+        </span>
+        <input type="password" name="api_key" placeholder="{{ 'sk-...' if estado_ia.provider == 'openai' else ('gsk_...' if estado_ia.provider == 'groq' else 'sk-ant-...') }}" autocomplete="off">
+        <small>
+          {% if estado_ia.provider == 'groq' or not estado_ia.provider %}
+            Obtén una key gratis en <code>console.groq.com/keys</code> (Groq tiene cuota gratis generosa).
+          {% elif estado_ia.provider == 'anthropic' %}
+            Obtén una key en <code>console.anthropic.com/settings/keys</code>.
+          {% else %}
+            Obtén una key en <code>platform.openai.com/api-keys</code>.
+          {% endif %}
+        </small>
+      </label>
+
+      <label class="ai-config-toggle">
+        <input type="checkbox" name="enabled" value="1" {% if estado_ia.enabled %}checked{% endif %}>
+        <span>Activar IA externa (si está desactivada uso motor local)</span>
+      </label>
+
+      <div class="ai-config-actions">
+        <button type="submit" class="oa-btn oa-btn--primary oa-btn--sm">💾 Guardar</button>
+        <button type="button" class="oa-btn oa-btn--ghost oa-btn--sm" id="ai-test-conn">🧪 Probar conexión</button>
+        <span id="ai-test-result" class="ai-test-result"></span>
+      </div>
+    </form>
+  </details>
+  {% endif %}
 
   <div class="ai-layout">
     {# ─── Sidebar: lista de conversaciones ────────────────────── #}
@@ -161,6 +220,32 @@
     const btn = e.submitter;
     if (btn && btn.dataset.confirm && !confirm(btn.dataset.confirm)) e.preventDefault();
   });
+  // Test de conexión con el proveedor externo
+  const testBtn = document.getElementById('ai-test-conn');
+  const testRes = document.getElementById('ai-test-result');
+  if (testBtn && testRes) {
+    testBtn.addEventListener('click', async () => {
+      testRes.textContent = '⏳ Probando…';
+      testRes.className = 'ai-test-result';
+      try {
+        const csrf = document.querySelector('input[name=csrf_token]')?.value || '';
+        const r = await fetch({{ url_for('superadmin_ai.test_conexion')|tojson }}, {
+          method: 'POST', headers: { 'X-CSRFToken': csrf, 'Accept': 'application/json' }
+        });
+        const data = await r.json();
+        if (data.ok) {
+          testRes.textContent = '✅ Conexión OK';
+          testRes.classList.add('is-ok');
+        } else {
+          testRes.textContent = '❌ ' + (data.error || 'error desconocido');
+          testRes.classList.add('is-err');
+        }
+      } catch (e) {
+        testRes.textContent = '❌ Error de red';
+        testRes.classList.add('is-err');
+      }
+    });
+  }
 })();
 </script>
 {% endblock %}

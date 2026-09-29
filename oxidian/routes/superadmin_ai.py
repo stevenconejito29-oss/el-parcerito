@@ -192,3 +192,72 @@ def snapshot_json():
     if not _authorised():
         abort(403)
     return jsonify(ai_advisor.build_snapshot())
+
+
+# ─────────────────────────────────────────────────────────────────
+# Configuración rápida del proveedor externo desde el propio asesor
+# ─────────────────────────────────────────────────────────────────
+
+# Modelos por defecto recomendados por proveedor (para pintar en el form).
+DEFAULT_MODELS = {
+    "groq": "llama-3.3-70b-versatile",
+    "anthropic": "claude-3-5-sonnet-latest",
+    "openai": "gpt-4o-mini",
+}
+
+
+@superadmin_ai_bp.route("/configurar", methods=["POST"])
+@login_required
+def configurar_proveedor():
+    """Guarda proveedor + modelo + API key sin salir del asesor.
+
+    Solo super_admin — cambia claves soberanas. Redirige de vuelta al asesor
+    con flash de éxito/error.
+    """
+    if getattr(current_user, "rol", None) != "super_admin":
+        abort(403)
+    from models import SiteConfig
+    provider = (request.form.get("provider") or "").strip().lower()
+    model = (request.form.get("model") or "").strip()
+    api_key = (request.form.get("api_key") or "").strip()
+    enabled = "1" if request.form.get("enabled") else "0"
+
+    if provider not in {"anthropic", "openai", "groq", ""}:
+        flash("Proveedor no válido.", "danger")
+        return redirect(url_for("superadmin_ai.index"))
+
+    # Si el key viene vacío pero ya hay uno guardado, no lo pisamos.
+    if not api_key:
+        api_key = SiteConfig.get("COMMERCIAL_AI_API_KEY", "") or ""
+    if not model and provider:
+        model = DEFAULT_MODELS.get(provider, "")
+
+    SiteConfig.set("COMMERCIAL_AI_PROVIDER", provider, user_id=current_user.id, descripcion="configurado desde asesor IA")
+    SiteConfig.set("COMMERCIAL_AI_MODEL", model, user_id=current_user.id, descripcion="configurado desde asesor IA")
+    if api_key:
+        SiteConfig.set("COMMERCIAL_AI_API_KEY", api_key, user_id=current_user.id, descripcion="configurado desde asesor IA")
+    SiteConfig.set("COMMERCIAL_AI_ENABLED", enabled, user_id=current_user.id, descripcion="configurado desde asesor IA")
+
+    try:
+        db.session.commit()
+        flash("Proveedor IA guardado. Envía un mensaje para probar.", "success")
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"Error guardando configuración: {exc}", "danger")
+    return redirect(url_for("superadmin_ai.index"))
+
+
+@superadmin_ai_bp.route("/test-conexion", methods=["POST"])
+@login_required
+def test_conexion():
+    """Ejecuta un ping al proveedor y devuelve resultado en JSON."""
+    if not _authorised():
+        abort(403)
+    from routes.admin import _llamar_ia_analisis
+    respuesta, error = _llamar_ia_analisis(
+        "Responde solamente 'ok' para confirmar la conexión.",
+        {"prueba": True},
+    )
+    if respuesta:
+        return jsonify({"ok": True, "respuesta_muestra": (respuesta or "")[:200]})
+    return jsonify({"ok": False, "error": error or "sin_respuesta"}), 400
