@@ -130,13 +130,27 @@ QUICK_ACTIONS = {
 def build_snapshot() -> dict:
     """Devuelve el snapshot agregado que se inyecta como contexto al modelo.
 
-    Reutiliza el generador ya probado de ``routes.admin`` para evitar
-    duplicación. Si en el futuro se quisiera un snapshot distinto para el
-    asesor (más profundo, con datos financieros ampliados) se sobreescribe
-    aquí sin tocar la ruta original de admin.
+    Dos capas:
+
+    1. **Datos base** — ``_resumen_negocio_para_ia`` (catálogo, ventas 7/30/90d,
+       top por volumen, fidelidad, zonas, cupones).
+    2. **Insights derivados** — ``business_intelligence.compute_insights`` con
+       comparativas semana-vs-semana / mes-vs-mes, ranking por CONTRIBUCIÓN
+       MARGINAL (no solo volumen), heatmap horarios+día de semana,
+       pares cross-sell, salud de clientes (activos/dormidos/perdidos/nuevos),
+       mix de métodos de pago y anomalías legibles.
+
+    Con esta capa el modelo cita hechos concretos ("ventas cayeron 22% esta
+    semana, principalmente el miércoles") en lugar de generalidades.
     """
     from routes.admin import _resumen_negocio_para_ia
-    return _resumen_negocio_para_ia()
+    base = _resumen_negocio_para_ia()
+    try:
+        from ai_services.business_intelligence import compute_insights
+        base["insights"] = compute_insights()
+    except Exception as exc:
+        base["insights"] = {"error": f"insights_no_disponibles: {exc}"}
+    return base
 
 
 # ─────────────────────────────────────────────────────────────────────

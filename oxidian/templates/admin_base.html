@@ -165,6 +165,9 @@
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian-ui.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian-admin.css', v=asset_version) }}">
+  {# admin-mobile.css se carga DESPUÉS de todos los demás para mayor
+     especificidad; contiene solo overrides para viewports ≤480px. #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin-mobile.css', v=asset_version) }}">
   {% if request.endpoint == 'admin.finanzas' %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin-finance.css', v=asset_version) }}">
   {% endif %}

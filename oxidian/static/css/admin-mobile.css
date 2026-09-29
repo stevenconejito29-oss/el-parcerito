@@ -1,0 +1,109 @@
+/* ══════════════════════════════════════════════════════════════════
+   admin-mobile.css — Fixes de responsividad para el panel super_admin
+   en móviles pequeños (≤480px). Complemento aditivo a los CSS
+   existentes; se carga después para tener mayor especificidad.
+
+   Auditoría 2026-09-29 identificó 6 áreas rotas en 320-380px que este
+   archivo cierra sin modificar los CSS base.
+   ══════════════════════════════════════════════════════════════════ */
+
+/* 1. Config: status grid 4 cols → 2 → 1 antes de 480px */
+@media (max-width: 520px) {
+  .cfg-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: .5rem !important; }
+}
+@media (max-width: 380px) {
+  .cfg-status-grid { grid-template-columns: 1fr !important; }
+  .cfg-status-grid a { padding: .7rem .6rem !important; }
+  .cfg-status-grid strong { margin: .15rem 0 !important; font-size: .85rem !important; }
+  .cfg-status-grid small { font-size: .68rem !important; }
+}
+
+/* 2. Health strip: fuerza 1 col en 380px con texto que wrappea */
+@media (max-width: 480px) {
+  .sa-health-strip { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: .4rem !important; }
+}
+@media (max-width: 380px) {
+  .sa-health-strip { grid-template-columns: 1fr !important; gap: .35rem !important; }
+  .sa-health-pill { min-height: 48px !important; padding: .5rem .6rem !important; }
+  .sa-health-pill__label small {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    line-height: 1.25;
+  }
+  .sa-health-pill__icon { width: 28px !important; height: 28px !important; font-size: 1.05rem !important; }
+}
+
+/* 3. Access card: no forzar min-width en móvil */
+@media (max-width: 420px) {
+  .sa-access-card { flex-direction: column; align-items: stretch; }
+  .sa-access-card > div { flex: 1 1 100% !important; min-width: 0 !important; }
+  .sa-access-card form { flex-direction: column; gap: .5rem; }
+  .sa-access-card button,
+  .sa-access-card a { width: 100%; text-align: center; }
+}
+
+/* 4. Reparto: métricas 3→2→1 col + segmented control 1 col */
+@media (max-width: 480px) {
+  .sa-reparto-metrics { grid-template-columns: repeat(3, 1fr) !important; gap: .35rem !important; }
+}
+@media (max-width: 360px) {
+  .sa-reparto-metrics { grid-template-columns: repeat(2, 1fr) !important; }
+  .sa-metric__value { font-size: 1rem !important; }
+  .sa-metric__label { font-size: .58rem !important; }
+  .sa-seg { grid-template-columns: 1fr !important; gap: .3rem !important; }
+  .sa-seg__opt { min-height: 60px !important; padding: .55rem .4rem !important; }
+  .sa-seg__label { font-size: .85rem !important; }
+  .sa-seg__hint { font-size: .62rem !important; line-height: 1.2; }
+  .sa-reparto-actions { flex-direction: column; }
+  .sa-reparto-actions .oa-btn { width: 100%; }
+}
+
+/* 5. Radio group / checkbox group: 2 cols → 1 antes de 420px */
+@media (max-width: 420px) {
+  .cfg-radio-group { grid-template-columns: 1fr !important; gap: .4rem !important; }
+  .cfg-radio-option { min-height: 52px; padding: .5rem .7rem !important; }
+}
+
+/* 6. AI advisor chat: sidebar y quick-actions más compactos ≤380px */
+@media (max-width: 380px) {
+  .ai-page-header { flex-direction: column; align-items: stretch; }
+  .ai-page-header h1 { font-size: 1.1rem !important; }
+  .ai-page-header-actions { flex-direction: column; gap: .35rem; }
+  .ai-page-header-actions .oa-btn { width: 100%; }
+  .ai-quick-actions { padding: .5rem !important; gap: .35rem !important; }
+  .ai-quick-chip { padding: .4rem .55rem !important; }
+  .ai-quick-chip strong { font-size: .76rem !important; }
+  .ai-quick-chip span { font-size: .63rem !important; }
+  .ai-messages { padding: .55rem !important; min-height: 220px; max-height: calc(100vh - 380px); }
+  .ai-msg { max-width: 96% !important; }
+  .ai-msg-body { padding: .55rem .7rem; font-size: .84rem; }
+  .ai-composer { padding: .5rem !important; }
+  .ai-composer textarea { font-size: .85rem; }
+}
+
+/* 7. Sidebar admin: ancho reducido y padding chico en móvil (extra fix) */
+@media (max-width: 480px) {
+  /* Grids genéricos de admin que usan minmax(≥280px) → colapsar a 1 col */
+  [style*="minmax(min(100%, 280px)"],
+  [style*="minmax(min(100%, 300px)"],
+  [style*="minmax(min(100%, 320px)"] {
+    grid-template-columns: 1fr !important;
+  }
+  .oa-kpi { padding: .7rem !important; }
+  .oa-kpi__value { font-size: 1.15rem !important; }
+  .oa-kpi__label { font-size: .68rem !important; }
+  .oa-kpi__delta { font-size: .62rem !important; }
+}
+
+/* 8. Overflow horizontal global en admin: cinturón de seguridad ≤400px */
+@media (max-width: 400px) {
+  .oa-page, .cfg-page, .ai-page {
+    padding-left: .5rem !important;
+    padding-right: .5rem !important;
+  }
+  .oa-page > *, .cfg-page > *, .ai-page > *,
+  .sa-disclosure-body { max-width: 100vw; min-width: 0; }
+  table.responsive-table,
+  .oa-panel table { display: block; overflow-x: auto; }
+}
