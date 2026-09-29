@@ -349,36 +349,76 @@
       {% endfor %}
     </div>
     {% if brand.delivery %}
-    {# Estado actual del modo de reparto + botón para intercambiar.
-       Mutex real: uno u otro, nunca ambos. Backend
-       /superadmin/modo-reparto/switch cambia el toggle atómicamente. #}
+    {# Panel de reparto — v6: segmented control mutex + stats de franjas + accesos
+       directos a planificador. Mutex real: uno u otro, nunca ambos. #}
     {% set _in = (delivery_modes.inmediato if delivery_modes is defined else true) %}
     {% set _fr = (delivery_modes.franjas if delivery_modes is defined else false) %}
-    <div class="oa-panel" style="margin-top:.9rem;padding:.85rem 1rem;border-radius:14px;background:color-mix(in srgb, var(--brand-primary) 5%, var(--col-surface));border:1px solid color-mix(in srgb, var(--brand-primary) 22%, var(--col-border));">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+    {% set _fs = franja_stats or {'hoy':0,'manana':0,'proximas_7d':0,'total_futuras':0} %}
+    <div class="oa-panel sa-reparto-panel" style="margin-top:.9rem;">
+      <div class="sa-reparto-header">
         <div>
-          <p style="margin:0;font-weight:900;font-size:.82rem;color:var(--brand-primary);letter-spacing:.06em;text-transform:uppercase;">Modo de reparto</p>
-          <p style="margin:.15rem 0 0;font-size:.98rem;font-weight:800;color:var(--col-text);">
-            {% if _fr %}📅 Franjas horarias{% else %}⚡ Delivery inmediato{% endif %}
-          </p>
-          <p style="margin:.1rem 0 0;font-size:.72rem;color:var(--col-muted);">
+          <p class="sa-reparto-eyebrow">Modo de reparto</p>
+          <p class="sa-reparto-title">{% if _fr %}📅 Franjas horarias{% else %}⚡ Delivery inmediato{% endif %}</p>
+          <p class="sa-reparto-desc">
             {% if _fr %}Cliente reserva día + franja. Sistema sugiere la más cercana con cupo.
             {% else %}Sale en cuanto esté listo. Sin reserva de horario.{% endif %}
           </p>
         </div>
-        <form method="POST" action="{{ url_for('superadmin.modo_reparto_switch') }}" style="margin:0;">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="oa-btn oa-btn--secondary oa-btn--sm" data-confirm="¿Cambiar el modo de reparto? Se aplicará al próximo pedido.">
-            Cambiar a {% if _fr %}⚡ inmediato{% else %}📅 franjas{% endif %}
+      </div>
+
+      {# Segmented control mutex. Envía POST solo cuando cambia el modo. #}
+      <form method="POST" action="{{ url_for('superadmin.modo_reparto_switch') }}" class="sa-reparto-switch" data-current="{{ 'franjas' if _fr else 'inmediato' }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="sa-seg" role="group" aria-label="Modo de reparto activo">
+          <button type="submit" name="_target" value="inmediato" class="sa-seg__opt {% if _in %}is-active{% endif %}" {% if _in %}aria-pressed="true" disabled{% else %}aria-pressed="false" data-confirm="Cambiar a delivery inmediato. Se aplicará al próximo pedido."{% endif %}>
+            <span class="sa-seg__icon">⚡</span>
+            <span class="sa-seg__label">Inmediato</span>
+            <span class="sa-seg__hint">Sale al estar listo</span>
           </button>
-        </form>
+          <button type="submit" name="_target" value="franjas" class="sa-seg__opt {% if _fr %}is-active{% endif %}" {% if _fr %}aria-pressed="true" disabled{% else %}aria-pressed="false" data-confirm="Cambiar a franjas horarias. Se aplicará al próximo pedido."{% endif %}>
+            <span class="sa-seg__icon">📅</span>
+            <span class="sa-seg__label">Franjas</span>
+            <span class="sa-seg__hint">Cliente reserva horario</span>
+          </button>
+        </div>
+      </form>
+
+      {# Stats + avisos + accesos rápidos al planificador de franjas. #}
+      <div class="sa-reparto-metrics">
+        <div class="sa-metric">
+          <span class="sa-metric__value">{{ _fs.hoy }}</span>
+          <span class="sa-metric__label">Franjas hoy</span>
+        </div>
+        <div class="sa-metric">
+          <span class="sa-metric__value">{{ _fs.manana }}</span>
+          <span class="sa-metric__label">Mañana</span>
+        </div>
+        <div class="sa-metric">
+          <span class="sa-metric__value">{{ _fs.proximas_7d }}</span>
+          <span class="sa-metric__label">Próximos 7 días</span>
+        </div>
+      </div>
+
+      {% if _fr and _fs.total_futuras == 0 %}
+      <div class="oa-alert oa-alert--err" style="margin-top:.7rem;">
+        <span class="oa-alert__icon">⚠️</span>
+        <div>
+          <strong>Modo franjas activo pero no hay franjas creadas</strong>
+          <p style="margin:.2rem 0 0;font-size:.78rem;">El checkout está pidiendo horario pero no hay ninguno disponible. Crea al menos una franja o cambia a modo inmediato.</p>
+        </div>
+      </div>
+      {% elif not _fr and _fs.total_futuras > 0 %}
+      <p class="oa-section__sub" style="margin-top:.6rem;">
+        Tienes {{ _fs.total_futuras }} franja{{ '' if _fs.total_futuras == 1 else 's' }} planificada{{ '' if _fs.total_futuras == 1 else 's' }} sin usar (modo inmediato ignora la agenda).
+      </p>
+      {% endif %}
+
+      <div class="sa-reparto-actions">
+        <a href="{{ url_for('admin.delivery_franjas_panel') }}" class="oa-btn oa-btn--primary oa-btn--sm">📅 Planificar franjas</a>
+        <a href="{{ url_for('admin.delivery_franjas_form_nuevo') }}" class="oa-btn oa-btn--secondary oa-btn--sm">➕ Nueva franja</a>
+        {% if _fr %}<a href="{{ url_for('superadmin.franjas_live') }}" class="oa-btn oa-btn--ghost oa-btn--sm">👁 Ver en vivo</a>{% endif %}
       </div>
     </div>
-    {% if _fr %}
-    <p class="oa-section__sub" style="margin-top:.6rem">
-      <a href="{{ url_for('superadmin.franjas_live') }}">Ver franjas de reparto en vivo →</a>
-    </p>
-    {% endif %}
     {% endif %}
   </section>
 

@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ ui.cart_title }} — {{ brand.nombre }}{% endblock %}
-{% block styles %}
+{% block styles_components %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-cart.css', v=asset_version) }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-cart-responsive.css', v=asset_version) }}">
 {% endblock %}
 {% block content %}
 

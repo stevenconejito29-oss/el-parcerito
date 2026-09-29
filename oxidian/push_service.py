@@ -169,7 +169,7 @@ def _dispatch(subscriptions, payload: dict, *, evento: str = "web_push",
             "subscription_id": sub.id,
             "expected_user_id": sub.user_id,
             "expected_device_hash": sub.device_hash,
-            "expected_role": sub.usuario.rol if sub.usuario else None,
+            "expected_role": sub.usuario.rol if sub.usuario else sub.rol,
             "payload": payload,
         }
         db.session.add(NotificationOutbox(
@@ -304,18 +304,19 @@ def send_push_outbox_payload(payload: dict) -> tuple[bool, str | None]:
     sub = db.session.get(PushSubscription, int(subscription_id))
     if not sub or not sub.activo:
         return True, None
-    if expected_user_id is not None and sub.user_id != int(expected_user_id):
+    if "expected_user_id" in payload and sub.user_id != (int(expected_user_id) if expected_user_id is not None else None):
         logger.warning(
             "Push descartada: suscripción %s cambió de propietario antes del envío",
             sub.id,
         )
         return True, None
 
-    if not sub.usuario or not sub.usuario.activo:
+    guest = sub.user_id is None and sub.rol == "visitante" and expected_role == "visitante" and bool(expected_device_hash)
+    if not guest and (not sub.usuario or not sub.usuario.activo):
         return True, None
     if expected_device_hash and sub.device_hash != expected_device_hash:
         return True, None
-    if expected_role and sub.usuario.rol != expected_role:
+    if expected_role and (sub.usuario.rol if sub.usuario else sub.rol) != expected_role:
         return True, None
 
     pub, priv = _get_vapid_keys()
@@ -539,3 +540,13 @@ def _build_payload(title, body, url, icon=None, badge=None, tag=None,
         "badgeCount": 1,
         "actions": [{"action": "open", "title": "Ver ahora"}],
     }
+
+
+def bind_pending_device_push(customer_id, device_hash):
+    """Vincula solo avisos anónimos del navegador que acaba de crear el pedido."""
+    from models import PushSubscription, User
+    from extensions import db
+    customer = db.session.get(User, customer_id)
+    if device_hash and customer and customer.activo:
+        PushSubscription.query.filter_by(user_id=None, device_hash=device_hash, rol="visitante").update(
+            {PushSubscription.user_id: customer_id, PushSubscription.rol: customer.rol}, synchronize_session=False)

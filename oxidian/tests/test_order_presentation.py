@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
-from order_presentation import order_presentation
+from order_presentation import order_presentation, public_order_notes
 
 
 class OrderPresentationTest(unittest.TestCase):
@@ -26,6 +26,14 @@ class OrderPresentationTest(unittest.TestCase):
                 view = order_presentation(self.order(state, "pending"))
                 self.assertFalse(view["confirmation_pending"])
                 self.assertNotIn("Confirma", view["title"])
+
+    def test_customer_notes_hide_legacy_cart_keys_without_changing_stored_notes(self):
+        original = 'Portal 12, llamar al llegar [Combo 17#abcdef123456: sin cebolla | Combo 8: sin salsa]'
+        self.assertEqual(public_order_notes(original), 'Portal 12, llamar al llegar')
+        self.assertIn('17#abcdef123456', original)
+        self.assertEqual(public_order_notes('[Combo 17: sin cebolla]'), '')
+        self.assertEqual(public_order_notes('Quiero el combo 17 sin cebolla'), 'Quiero el combo 17 sin cebolla')
+        self.assertEqual(public_order_notes(None), '')
 
     def test_unknown_state_does_not_invent_progress(self):
         self.assertEqual(order_presentation(self.order("legacy"))["title"], "Estado de tu pedido")

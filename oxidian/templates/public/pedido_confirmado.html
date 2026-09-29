@@ -199,12 +199,12 @@
         </div>
       </div>
       {% endif %}
-      {% if pedido.notas %}
+      {% if public_notes %}
       <div class="flex items-start gap-2">
         <span class="flex-shrink-0">📝</span>
         <div>
           <span class="font-semibold" style="color:var(--col-text)">Notas:</span>
-          <span style="color:var(--col-muted)"> {{ pedido.notas }}</span>
+          <span style="color:var(--col-muted)"> {{ public_notes }}</span>
         </div>
       </div>
       {% endif %}

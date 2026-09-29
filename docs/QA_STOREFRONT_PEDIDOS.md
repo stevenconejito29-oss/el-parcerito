@@ -178,3 +178,42 @@ REVIEW_BROWSER=webkit node scripts/test_catalog_cart_badges.mjs
 WebKit local aproxima el motor de Safari; no sustituye probar una instalación
 física de iOS. Las capturas usan datos de QA y ocultan las notificaciones
 producidas por bloquear el service worker durante la simulación.
+
+## Revisión posterior a Claude: carrito, privacidad y avisos desde la primera visita
+
+Se revisó el commit `457eff1` antes de modificarlo. Se conserva la separación
+por comas y el diseño compacto de las opciones simples. El selector de cantidad
+ocupaba la columna de 20 px destinada al radio: sus botones se superponían al
+nombre del producto e impedían pulsar «+» en móvil. Ahora tiene una fila propia.
+
+- Botones de tarjetas con texto completo y columna explícita; las etiquetas de
+  entrega siguen visibles incluso por debajo de 380 px.
+- Carrito con nombres multilínea, etiquetas y sabores adaptables, controles de
+  cantidad en una fila y espacio completo para los datos en móvil.
+- Checkout deja de copiar claves `producto#firma` a las notas del pedido. Las
+  notas por producto continúan en sus líneas. El ticket de pedidos anteriores
+  oculta únicamente el sufijo automático con claves; no reescribe el histórico.
+- Push se puede activar durante la primera visita pública. La suscripción se
+  vincula a la identidad privada del dispositivo, sin crear usuarios ficticios,
+  y al realizar checkout se asocia a ese cliente dentro de la transacción.
+- Tiendas privadas conservan la verificación de acceso. Otro navegador no puede
+  consultar, reemplazar ni borrar la suscripción; tampoco recibe sus pedidos.
+  Se mantiene la migración de suscripciones antiguas de su propio usuario.
+- La prueba de aviso propio admite dispositivos todavía sin pedido. El worker
+  descarta trabajos si cambió el dispositivo, el propietario o su rol.
+
+`test_first_visit_push_cart.mjs` verifica la activación inicial con API y CSRF
+reales (solo Web Push simulado), menú y carrito a 280/320/375/393/430/768 px con
+texto ampliado, checkout, conservación de la suscripción y rechazo del acceso
+ajeno al ticket. Ejecutado en Chromium y WebKit. También se repite el recorrido
+WhatsApp «si» → ticket actualizado → solicitud de ticket por chat.
+
+```bash
+# Servidor QA ampliado en 5077; desde oxidian/:
+node scripts/test_first_visit_push_cart.mjs
+REVIEW_BROWSER=webkit node scripts/test_first_visit_push_cart.mjs
+REVIEW_BASE_URL=http://127.0.0.1:5077 node scripts/test_first_order_journey.mjs
+```
+
+No requiere migración de datos: `push_subscriptions.user_id` ya admite NULL.
+Las pruebas de transporte no sustituyen la recepción física de push en iOS.

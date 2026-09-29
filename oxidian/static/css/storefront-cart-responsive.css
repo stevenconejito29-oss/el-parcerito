@@ -1,0 +1,87 @@
+/* La información y los controles del carrito comparten el ancho disponible. */
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.cr-item, .cr-item-info, .cr-choice-row, .cr-choice-chips, .cr-combo, .cr-combo-rows, .cr-combo-row, .cr-item-tags) {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .cr-item-name {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+  font-size: 1rem !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.cr-item-tags, .cr-choice-chips) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.cr-tag, .cr-choice-chip, .cr-combo-pill, .cr-item-note) {
+  height: auto;
+  width: auto;
+  max-width: 100%;
+  white-space: normal !important;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  font-size: .8125rem !important;
+  line-height: 1.45;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .cr-choice-chip > span {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .cr-item-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  align-items: center;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .cr-qty {
+  display: flex;
+  flex-direction: row;
+  flex: 0 0 auto;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .cr-qty-btn {
+  width: 44px !important;
+  min-width: 44px !important;
+  height: 44px !important;
+  min-height: 44px !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .cr-qty-input {
+  width: 44px !important;
+  min-width: 0;
+  font-size: 1rem;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .cr-combo-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  white-space: normal;
+  line-height: 1.4;
+}
+@media (max-width: 599px) {
+  :is(html, html.ox-pwa-runtime) body.ox-body-public .cr-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    grid-template-areas: "photo remove" "info info";
+    gap: .75rem;
+    padding: 1rem !important;
+  }
+  :is(html, html.ox-pwa-runtime) body.ox-body-public .cr-thumb {
+    grid-area: photo;
+    width: 72px;
+    height: 72px;
+  }
+  :is(html, html.ox-pwa-runtime) body.ox-body-public .cr-item-info { grid-area: info; }
+  :is(html, html.ox-pwa-runtime) body.ox-body-public .cr-remove {
+    grid-area: remove;
+    position: static;
+    width: 44px;
+    height: 44px;
+  }
+  :is(html, html.ox-pwa-runtime) body.ox-body-public .cr-choice-row { display: block; }
+  :is(html, html.ox-pwa-runtime) body.ox-body-public .cr-price-block { flex: 1 0 100%; }
+}

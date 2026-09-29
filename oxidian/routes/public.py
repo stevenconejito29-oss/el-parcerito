@@ -2981,11 +2981,8 @@ def checkout():
             flash("No hay métodos de pago disponibles ahora mismo. Contacta con la tienda.", "danger")
             return redirect(url_for("public.checkout"))
         notas = request.form.get("notas", "").strip()[:1000]
-        # Agregar personalizaciones de combos a las notas
-        notas_combo = session.get("notas_combo", {})
-        if notas_combo:
-            notas_combo_txt = " | ".join(f"Combo {k}: {v}" for k, v in notas_combo.items())
-            notas = (notas + " [" + notas_combo_txt + "]").strip() if notas else "[" + notas_combo_txt + "]"
+        # Las notas de cada producto ya se conservan en OrderItem. No copiar
+        # claves/firma del carrito a las notas visibles del pedido.
         cupon_id = request.form.get("cupon_id", type=int)
         cupon_codigo = request.form.get("cupon_codigo", "").strip().upper()
         # Fallback a la sesión para conservar una validación previa del propio
@@ -3538,6 +3535,8 @@ def checkout():
         session["last_guest_order_id"] = pedido.id
         session["last_guest_order_token"] = token
         session["push_cliente_id"] = cliente.id
+        from push_service import bind_pending_device_push
+        bind_pending_device_push(cliente.id, pedido.customer_device_hash)
 
         # La notificación queda en la misma transacción del pedido.
         enviar_whatsapp_estado(pedido)
@@ -3638,7 +3637,7 @@ def _sesion_autoriza_pedido(pedido_id: int, supplied_token: str = "") -> bool:
 
 @public_bp.route("/pedido/<int:pedido_id>/confirmado")
 def pedido_confirmado(pedido_id):
-    from order_presentation import order_presentation
+    from order_presentation import order_presentation, public_order_notes
     token = request.args.get("token", "")
     if not _sesion_autoriza_pedido(pedido_id, token):
         flash("No pudimos verificar el pedido en este dispositivo.", "warning")
@@ -3649,6 +3648,7 @@ def pedido_confirmado(pedido_id):
     return render_template(
         "public/pedido_confirmado.html",
         pedido=pedido,
+        public_notes=public_order_notes(pedido.notas),
         requiere_confirmacion_whatsapp=order_presentation(pedido)["confirmation_pending"],
         presentation=order_presentation(pedido),
         pickup=get_pickup_details(),

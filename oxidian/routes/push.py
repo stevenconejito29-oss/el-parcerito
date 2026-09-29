@@ -52,6 +52,14 @@ def _push_user():
     return user if user and user.activo and user.rol == "cliente" else None
 
 
+def _push_allowed(user):
+    """Una visita pública puede registrar su dispositivo sin crear un cliente."""
+    from customer_access import private_store_enabled
+    if user:
+        return True
+    return not (private_store_enabled() or current_user.is_authenticated or session.get("push_cliente_id"))
+
+
 @push_bp.route("/vapid-key")
 def vapid_key():
     """Clave pública VAPID para que el frontend suscriba al usuario."""
@@ -73,8 +81,8 @@ def status():
     device_hash = browser_device_hash()
     active_devices = 0
     this_device_active = False
-    if user_id:
-        active_devices = PushSubscription.query.filter_by(user_id=user_id, activo=True).count()
+    if device_hash and _push_allowed(user):
+        active_devices = PushSubscription.query.filter_by(user_id=user_id, device_hash=device_hash, activo=True).count()
         endpoint = (request.args.get("endpoint") or "").strip()
         if endpoint:
             this_device_active = PushSubscription.query.filter_by(
@@ -83,7 +91,7 @@ def status():
     return jsonify({
         "ok": True,
         "configured": not vapid_configuration_error(),
-        "eligible": bool(user_id),
+        "eligible": _push_allowed(user),
         "active_devices": active_devices,
         "this_device_active": this_device_active,
     })
@@ -109,11 +117,11 @@ def subscribe():
     if error:
         return jsonify({"ok": False, "error": error}), 400
     user = _push_user()
-    if not user:
-        return jsonify({"ok": False, "error": "Completa un pedido antes de activar avisos"}), 403
+    if not _push_allowed(user):
+        return jsonify({"ok": False, "error": "Verifica tu acceso para activar avisos"}), 403
     device_hash = browser_device_hash(create=True)
-    values = dict(user_id=user.id, device_hash=device_hash, endpoint=endpoint,
-                  p256dh=p256dh, auth=auth_key, rol=user.rol, activo=True,
+    values = dict(user_id=user.id if user else None, device_hash=device_hash, endpoint=endpoint,
+                  p256dh=p256dh, auth=auth_key, rol=user.rol if user else "visitante", activo=True,
                   user_agent=request.headers.get("User-Agent", "")[:300], ultimo_uso=utcnow())
     # Una sola operación con la clave única del proveedor; dos pestañas no
     # pueden crear registros duplicados ni provocar un 500 por la carrera.
@@ -122,11 +130,21 @@ def subscribe():
     else:
         from sqlalchemy.dialects.sqlite import insert
     statement=insert(PushSubscription).values(**values)
-    db.session.execute(statement.on_conflict_do_update(index_elements=["endpoint"],set_={k:v for k,v in values.items() if k != "endpoint"}))
+    owner_filter = PushSubscription.device_hash == device_hash
+    if user:
+        # Compatibilidad con suscripciones anteriores a la identidad de dispositivo.
+        owner_filter |= (PushSubscription.device_hash.is_(None) & (PushSubscription.user_id == user.id))
+    result = db.session.execute(statement.on_conflict_do_update(
+        index_elements=["endpoint"], set_={k:v for k,v in values.items() if k != "endpoint"},
+        where=owner_filter,
+    ))
+    if not result.rowcount:
+        db.session.rollback()
+        return jsonify(ok=False, error="Esta suscripción pertenece a otro dispositivo."), 409
     # Los pedidos anteriores solo se vinculan si ESTA sesión conserva su
     # autorización. Nunca se deduce el dispositivo por teléfono o user_id.
     ids=list(visitor_order_tokens())
-    if ids:
+    if ids and user:
         Order.query.filter(Order.id.in_(ids),Order.cliente_id==user.id,Order.customer_device_hash.is_(None)).update(
             {Order.customer_device_hash:device_hash},synchronize_session=False)
     db.session.commit()
@@ -142,9 +160,11 @@ def unsubscribe():
     endpoint = data["endpoint"].strip()
     user = _push_user()
     user_id = user.id if user else None
-    if endpoint and user_id:
+    from device_identity import browser_device_hash
+    device = browser_device_hash()
+    if endpoint and device and _push_allowed(user):
         PushSubscription.query.filter_by(
-            endpoint=endpoint, user_id=user_id
+            endpoint=endpoint, user_id=user_id, device_hash=device
         ).delete()
         db.session.commit()
     return jsonify({"ok": True})
@@ -174,14 +194,14 @@ def self_test():
     from push_service import vapid_configuration_error, _build_payload, _dispatch
     user = _push_user()
     device = browser_device_hash()
-    if not user or not device:
+    if not _push_allowed(user) or not device:
         return jsonify(ok=False, error='Verifica tu acceso y activa los avisos.'), 403
     if vapid_configuration_error():
         return jsonify(ok=False, error='El servidor no tiene notificaciones configuradas.'), 503
     data = request.get_json(silent=True) or {}
     if not isinstance(data, dict) or not isinstance(data.get('endpoint'), str):
         return jsonify(ok=False, error='Falta la suscripción de este dispositivo.'), 400
-    sub = PushSubscription.query.filter_by(user_id=user.id, device_hash=device,
+    sub = PushSubscription.query.filter_by(user_id=user.id if user else None, device_hash=device,
                                           endpoint=data['endpoint'], activo=True).first()
     if not sub:
         return jsonify(ok=False, error='Vuelve a activar los avisos en este dispositivo.'), 409

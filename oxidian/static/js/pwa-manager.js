@@ -259,7 +259,7 @@
 
   async function enablePush(button) {
     if (!pushEligible) {
-      toast('Podrás activar avisos de seguimiento al confirmar tu primer pedido.', 'info');
+      toast('Verifica tu acceso para activar los avisos en este dispositivo.', 'info');
       return;
     }
     if (isIOS && !isStandalone()) {

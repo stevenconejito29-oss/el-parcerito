@@ -978,6 +978,27 @@ def dashboard():
         CustomerAccessGrant.activo.is_(True), User.activo.is_(True), User.rol == "cliente",
     ).count()
 
+    # ── Franjas de reparto: stats rápidas para el panel "Modo de reparto" ──
+    franja_stats = {"hoy": 0, "manana": 0, "proximas_7d": 0, "total_futuras": 0}
+    if features["delivery"]:
+        from models import DeliverySlot
+        _manana = hoy + timedelta(days=1)
+        _limite_7d = hoy + timedelta(days=7)
+        franja_stats["hoy"] = DeliverySlot.query.filter(
+            DeliverySlot.fecha == hoy, DeliverySlot.activo.is_(True)
+        ).count()
+        franja_stats["manana"] = DeliverySlot.query.filter(
+            DeliverySlot.fecha == _manana, DeliverySlot.activo.is_(True)
+        ).count()
+        franja_stats["proximas_7d"] = DeliverySlot.query.filter(
+            DeliverySlot.fecha >= hoy,
+            DeliverySlot.fecha <= _limite_7d,
+            DeliverySlot.activo.is_(True),
+        ).count()
+        franja_stats["total_futuras"] = DeliverySlot.query.filter(
+            DeliverySlot.fecha >= hoy, DeliverySlot.activo.is_(True)
+        ).count()
+
     return render_template("superadmin/dashboard.html",
                            total_clientes=total_clientes,
                            total_staff=total_staff,
@@ -998,6 +1019,7 @@ def dashboard():
                            readiness=readiness,
                            private_store=private_store_enabled(),
                            authorised_customers=authorised_customers,
+                           franja_stats=franja_stats,
                            vertical_just_changed=session.pop("vertical_just_changed", None))
 
 

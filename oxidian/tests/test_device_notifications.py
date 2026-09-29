@@ -90,6 +90,72 @@ class DeviceNotificationTest(unittest.TestCase):
         self.assertEqual(self.subscribe(self.a,'a').status_code,403)
         self.assertEqual(PushSubscription.query.count(),0)
 
+    def test_first_visit_can_activate_without_customer_or_order(self):
+        guest = self.app.test_client()
+        count = User.query.count()
+        self.assertTrue(guest.get('/api/push/status').json['eligible'])
+        self.assertEqual(self.subscribe(guest, 'new-visitor').status_code, 200)
+        sub = PushSubscription.query.one()
+        self.assertIsNone(sub.user_id)
+        self.assertEqual(sub.rol, 'visitante')
+        self.assertTrue(sub.device_hash)
+        self.assertEqual(User.query.count(), count)
+        self.assertTrue(guest.get('/api/push/status', query_string={'endpoint': sub.endpoint}).json['this_device_active'])
+        other = self.app.test_client()
+        self.assertFalse(other.get('/api/push/status', query_string={'endpoint': sub.endpoint}).json['this_device_active'])
+        self.assertEqual(self.subscribe(other, 'new-visitor').status_code, 409)
+        other.post('/api/push/unsubscribe', json={'endpoint': sub.endpoint})
+        self.assertEqual(PushSubscription.query.count(), 1)
+        guest.post('/api/push/unsubscribe', json={'endpoint': sub.endpoint})
+        self.assertEqual(PushSubscription.query.count(), 0)
+
+    def test_existing_subscription_without_device_can_be_migrated_only_by_its_user(self):
+        row = PushSubscription(user_id=self.uid, endpoint='https://push.example.invalid/legacy', p256dh='key', auth='auth', rol='cliente', activo=True)
+        db.session.add(row); db.session.commit()
+        self.assertEqual(self.subscribe(self.app.test_client(), 'legacy').status_code, 409)
+        self.assertEqual(self.subscribe(self.a, 'legacy').status_code, 200)
+        db.session.refresh(row)
+        self.assertEqual(row.device_hash, hashlib.sha256(('a'*40).encode()).hexdigest())
+
+    def test_first_checkout_binds_only_its_pending_device(self):
+        from push_service import bind_pending_device_push, notify_order_state
+        guest, other = self.app.test_client(), self.app.test_client()
+        self.subscribe(guest, 'guest'); self.subscribe(other, 'other')
+        sub = PushSubscription.query.filter_by(endpoint='https://push.example.invalid/guest').one()
+        self.order.customer_device_hash = sub.device_hash
+        bind_pending_device_push(self.uid, sub.device_hash)
+        db.session.commit(); db.session.expire_all()
+        self.assertEqual(sub.user_id, self.uid)
+        self.assertIsNone(PushSubscription.query.filter_by(endpoint='https://push.example.invalid/other').one().user_id)
+        with patch('push_service._dispatch') as dispatch:
+            notify_order_state(self.order)
+        self.assertEqual([row.id for row in dispatch.call_args.args[0]], [sub.id])
+
+    def test_guest_self_test_is_queued_and_delivered_only_to_same_device(self):
+        import json
+        from models import NotificationOutbox
+        from push_service import send_push_outbox_payload
+        guest = self.app.test_client()
+        self.subscribe(guest, 'guest')
+        endpoint = PushSubscription.query.one().endpoint
+        with patch('push_service.vapid_configuration_error', return_value=None):
+            self.assertEqual(guest.post('/api/push/self-test', json={'endpoint': endpoint}).status_code, 200)
+        payload = json.loads(NotificationOutbox.query.one().payload_json)
+        with patch('push_service._get_vapid_keys', return_value=('public', 'private')), patch('push_service._vapid_subject', return_value='mailto:qa@example.test'), patch('push_service._send_one_result', return_value=(True, False, None)) as send:
+            self.assertEqual(send_push_outbox_payload(payload), (True, None))
+            self.assertEqual(send.call_count, 1)
+            PushSubscription.query.one().user_id = self.uid
+            db.session.commit()
+            send_push_outbox_payload(payload)
+            self.assertEqual(send.call_count, 1)
+
+    def test_private_store_still_requires_verified_access(self):
+        from models import SiteConfig
+        SiteConfig.set('ACCESO_CLIENTES_REGISTRADOS', '1'); db.session.commit()
+        guest = self.app.test_client()
+        self.assertFalse(guest.get('/api/push/status').json['eligible'])
+        self.assertEqual(self.subscribe(guest, 'guest').status_code, 403)
+
     def test_malformed_json_rejected(self):
         for payload in ([],{'keys':[]},{'keys':{'p256dh':4,'auth':True},'endpoint':'x'}):
             self.assertEqual(self.a.post('/api/push/subscribe',json=payload).status_code,400)

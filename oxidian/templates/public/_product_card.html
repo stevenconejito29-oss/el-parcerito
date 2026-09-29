@@ -188,7 +188,7 @@
     {% endif %}
 
     {# FOOTER: precio dominante + botón contextual #}
-    <div class="ep-card-footer">
+    <div class="ep-card-footer{% if _is_detail_action or p.solo_canje or not establecimiento.abierto or not _card.available %} ep-card-footer--detail{% endif %}">
       <div class="ep-card-prices">
         {% if p.solo_canje %}
           <span class="ep-card-price ep-card-price--points">

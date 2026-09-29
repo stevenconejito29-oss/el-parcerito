@@ -690,3 +690,29 @@ body.ox-body-public .ep-card.is-just-added {
   content: none !important;
   display: none !important;
 }
+
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-footer--detail {
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-areas: "price" "action";
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-btn-detail {
+  grid-column: 1 / -1;
+  max-width: none !important;
+  min-width: 0 !important;
+  justify-self: stretch;
+  overflow-wrap: normal;
+  word-break: normal;
+  font-size: .9375rem !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-cbadge-label {
+  display: inline !important;
+  white-space: normal;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-cart-state {
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: .8125rem;
+  line-height: 1.4;
+}

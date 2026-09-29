@@ -27,3 +27,87 @@
 .sa-access-card p { margin:.4rem 0; line-height:1.5; overflow-wrap:anywhere; }
 .sa-access-card form { display:flex; flex-wrap:wrap; align-items:center; gap:.65rem; }
 .sa-access-card button, .sa-access-card a { min-height:44px; white-space:normal; }
+
+/* ── Panel "Modo de reparto" v6 ─────────────────────────────────────────── */
+.sa-reparto-panel {
+  padding: 1rem 1.15rem;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--brand-primary) 5%, var(--col-surface));
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 22%, var(--col-border));
+  display: flex;
+  flex-direction: column;
+  gap: .9rem;
+}
+.sa-reparto-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.sa-reparto-eyebrow { margin: 0; font-weight: 900; font-size: .78rem; color: var(--brand-primary); letter-spacing: .08em; text-transform: uppercase; }
+.sa-reparto-title { margin: .2rem 0 0; font-size: 1.1rem; font-weight: 900; color: var(--col-text); }
+.sa-reparto-desc { margin: .2rem 0 0; font-size: .82rem; color: var(--col-muted); line-height: 1.4; }
+
+/* Segmented control mutex — visualmente evidencia el modo activo */
+.sa-reparto-switch { margin: 0; }
+.sa-seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .5rem;
+  padding: .35rem;
+  background: color-mix(in srgb, var(--col-border) 40%, var(--col-surface));
+  border-radius: 14px;
+  border: 1px solid var(--col-border);
+}
+.sa-seg__opt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .15rem;
+  padding: .7rem .5rem;
+  border-radius: 11px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--col-muted);
+  cursor: pointer;
+  transition: background .15s, color .15s, border .15s, transform .1s;
+  min-height: 74px;
+}
+.sa-seg__opt:hover:not(:disabled) { background: color-mix(in srgb, var(--brand-primary) 8%, transparent); color: var(--col-text); }
+.sa-seg__opt:active:not(:disabled) { transform: scale(.98); }
+.sa-seg__opt.is-active {
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--brand-primary) 22%, var(--col-surface)),
+    color-mix(in srgb, var(--brand-primary) 12%, var(--col-surface)));
+  border-color: color-mix(in srgb, var(--brand-primary) 55%, transparent);
+  color: var(--col-text);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--brand-primary) 22%, transparent);
+  cursor: default;
+}
+.sa-seg__icon { font-size: 1.4rem; line-height: 1; }
+.sa-seg__label { font-weight: 800; font-size: .92rem; }
+.sa-seg__hint { font-size: .68rem; color: var(--col-muted); text-align: center; line-height: 1.2; }
+.sa-seg__opt.is-active .sa-seg__hint { color: color-mix(in srgb, var(--brand-primary) 75%, var(--col-text)); font-weight: 700; }
+
+/* Métricas de franjas */
+.sa-reparto-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: .5rem;
+}
+.sa-metric {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: .55rem .3rem;
+  border-radius: 10px;
+  background: var(--col-surface);
+  border: 1px solid var(--col-border);
+}
+.sa-metric__value { font-size: 1.3rem; font-weight: 900; color: var(--col-text); line-height: 1.1; }
+.sa-metric__label { font-size: .68rem; color: var(--col-muted); text-transform: uppercase; letter-spacing: .04em; margin-top: .15rem; text-align: center; }
+
+.sa-reparto-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.sa-reparto-actions .oa-btn { min-height: 40px; }
+
+@media (max-width: 480px) {
+  .sa-seg { grid-template-columns: 1fr; }
+  .sa-reparto-metrics { grid-template-columns: repeat(3, 1fr); gap: .35rem; }
+  .sa-metric__value { font-size: 1.1rem; }
+  .sa-metric__label { font-size: .62rem; }
+}

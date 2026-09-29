@@ -319,6 +319,7 @@
         <a href="{{ url_for('superadmin.admins') }}" class="ox-sb-item"><span class="ox-sb-item-icon">{{ ui_icon('users') }}</span>Admins y permisos</a>
         <a href="{{ url_for('superadmin.chatbot') }}" class="ox-sb-item"><span class="ox-sb-item-icon">{{ ui_icon('messages-square') }}</span>WhatsApp del bot</a>
         {% if brand.delivery %}<a href="{{ url_for('superadmin.zonas') }}" class="ox-sb-item"><span class="ox-sb-item-icon">{{ ui_icon('truck') }}</span>Zonas globales</a>{% endif %}
+        {% if brand.delivery %}<a href="{{ url_for('admin.delivery_franjas_panel') }}" class="ox-sb-item"><span class="ox-sb-item-icon">{{ ui_icon('calendar') }}</span>Planificar franjas</a>{% endif %}
         {% if brand.delivery %}<a href="{{ url_for('superadmin.franjas_live') }}" class="ox-sb-item"><span class="ox-sb-item-icon">{{ ui_icon('calendar') }}</span>Franjas en vivo</a>{% endif %}
         {% if brand.favores %}<a href="{{ url_for('superadmin.cruces') }}" class="ox-sb-item"><span class="ox-sb-item-icon">{{ ui_icon('package') }}</span>El Cruce</a>{% endif %}
         <a href="{{ url_for('superadmin.config', section='acceso-clientes') }}#acceso" class="ox-sb-item"><span class="ox-sb-item-icon">{{ ui_icon('key') }}</span>Autorizar cliente</a>

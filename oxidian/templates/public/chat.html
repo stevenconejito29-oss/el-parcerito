@@ -6,7 +6,7 @@
   <header class="wcp-head">
     <a href="{{ url_for('public.index') }}" aria-label="Volver al menú">←</a>
     <div class="wcp-head-copy"><span>Ayuda en línea</span><h1 id="wcp-title">Chat {{ brand.nombre }}</h1><p id="wcp-status" aria-live="polite">Conectando…</p></div>
-    {% if session.get('push_cliente_id') %}<button type="button" class="wcp-notify" data-push-activate aria-label="Activar avisos del chat">🔔<span>Avisos</span></button>{% endif %}
+    {% if push_eligible %}<button type="button" class="wcp-notify" data-push-activate aria-label="Activar avisos del chat">🔔<span>Avisos</span></button>{% endif %}
   </header>
   <section class="wcp-conversation" aria-label="Conversación">
     <div class="wcp-message-tools">

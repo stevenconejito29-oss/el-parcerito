@@ -706,3 +706,42 @@ body.ox-body-public .pd-cstep-next.is-finish {
   border-color: var(--brand-primary);
   box-shadow: inset 0 0 0 1px var(--brand-primary) !important;
 }
+
+/* Un selector de cantidad no cabe en la columna reservada a un radio.
+   Conservamos la opción compacta de Claude y damos a − / cantidad / + su fila. */
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-opcion:has(.pd-combo-qty-selector) {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) !important;
+  align-items: start;
+  gap: .65rem !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-opcion:has(.pd-combo-qty-selector) > .pd-combo-opt-thumb {
+  grid-column: 1;
+  grid-row: 1;
+  width: 44px;
+  height: 44px;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-opcion:has(.pd-combo-qty-selector) > .pd-combo-opt-body {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-qty-selector {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-qty-control {
+  width: 44px !important;
+  min-width: 44px !important;
+  min-height: 44px !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-qty-input {
+  width: 44px !important;
+  min-width: 0;
+}

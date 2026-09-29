@@ -45,3 +45,13 @@ def order_presentation(order):
         "title": "Confirma tu pedido" if pending else titles.get(order.estado, "Estado de tu pedido"),
         "description": "Confirma por WhatsApp para que el equipo pueda empezar a prepararlo." if pending else descriptions.get(order.estado, "Consulta los detalles de tu pedido."),
     }
+
+
+def public_order_notes(notes):
+    """Oculta el sufijo legacy generado con IDs/firma de líneas del carrito.
+
+    Las notas de personalización siguen disponibles en sus líneas de pedido;
+    el snapshot y las notas originales de operación no se modifican.
+    """
+    import re
+    return re.sub(r"\s*\[Combo \d+(?:#[^:\s]+)?:[\s\S]*$", "", str(notes or "")).strip()
