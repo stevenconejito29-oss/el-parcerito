@@ -220,7 +220,9 @@ class FrontendContractsTest(unittest.TestCase):
 
         self.assertIn("data-route-map-panel", route)
         self.assertIn("vendor/leaflet/leaflet.js", route)
-        self.assertIn("showEmbeddedRoute(origin, ordered)", route)
+        self.assertIn("showEmbeddedRoute(origin, ordered,", route)
+        self.assertIn("Orden aproximado por cercanía", route)
+        self.assertIn("sin optimización vial", route)
         self.assertIn("Abrir navegación", route)
         self.assertNotIn("window.open('about:blank'", route)
         for module in ("efectivo", "bizum", "tarjeta"):

@@ -1,0 +1,31 @@
+{# Sólo datos de la compra: nunca imprimir metadata completa, IDs u origen interno. #}
+{% macro component(row) -%}
+<li>
+  <span>{{ row.get('cantidad', row.get('qty', 1)) }} × {{ row.get('nombre', '') }}</span>
+  {% set units = row.get('unidades_cliente') or [] %}
+  {% if units %}
+    {% for unit in units %}
+    <small>Unidad {{ unit.get('unidad', loop.index) }}{% if unit.get('presentacion') %} · {{ unit.presentacion.get('label', unit.presentacion.get('tamaño', '')) }}{% endif %}{% if unit.get('sabor') %} · {{ unit.sabor.get('nombre', '') }}{% endif %}</small>
+    {% endfor %}
+  {% else %}
+    {% set size = row.get('presentacion', row.get('presentation_cliente')) %}
+    {% if size %}<small>{{ size.get('label', size.get('tamaño', '')) }}</small>{% endif %}
+    {% for flavor in row.get('sabor_cliente') or [] %}<small>{{ flavor.get('cantidad', 1) }} × {{ flavor.get('nombre', '') }}</small>{% endfor %}
+  {% endif %}
+</li>
+{%- endmacro %}
+{% set metadata = item.get_metadata() %}
+{% set combo = metadata.get('combo') or {} %}
+{% set extras = (metadata.get('extras') or {}).get('opciones') or [] %}
+{% if combo.get('componentes') or combo.get('selecciones') %}
+<div class="order-item-details">
+  <strong>Contenido por combo</strong>
+  {% if combo.get('componentes') %}<ul>{% for row in combo.componentes %}{{ component(row) }}{% endfor %}</ul>{% endif %}
+  {% for group in combo.get('selecciones') or [] %}
+    {% if group.get('opciones') %}<small>{{ group.get('grupo', 'Tu selección') }}</small><ul>{% for row in group.opciones %}{{ component(row) }}{% endfor %}</ul>{% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+{% if extras %}
+<div class="order-item-details"><strong>Extras por unidad</strong><ul>{% for row in extras %}{{ component(row) }}{% endfor %}</ul></div>
+{% endif %}

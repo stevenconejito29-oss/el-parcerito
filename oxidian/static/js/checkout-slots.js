@@ -41,7 +41,7 @@
         list.querySelectorAll('.df-slot-selected').forEach(el => el.classList.remove('df-slot-selected'));
         label.classList.add('df-slot-selected');
         selected.value = input.value;
-        summary.textContent = `Entrega: ${DF.fmtFecha(slot.fecha)}, ${text.textContent}`;
+        summary.textContent = `Franja elegida: ${DF.fmtFecha(slot.fecha)}, ${text.textContent}`;
         summary.hidden = false; error.hidden = true;
       });
       label.append(input, text); list.append(label);
@@ -64,8 +64,7 @@
         /* Pre-selección automática: el backend marca `sugerida=true` en
            la primera franja abierta con cupo. Al cargar, el JS elige su
            día y su horario sin que el cliente tenga que buscar. El
-           cliente puede cambiarlo si quiere, pero por defecto ya está
-           reservado el hueco más cercano. */
+           cliente puede cambiarlo si quiere, pero la reserva efectiva se realiza al enviar el pedido. */
         const suggested = slots.find(s => s.sugerida) || slots[0];
         if (suggested) {
           day.value = suggested.fecha;

@@ -49,7 +49,17 @@ try {
   }
   await page.goto(base+'/producto/'+comboId);
   await page.evaluate(()=>document.documentElement.style.fontSize='20px');
-  await contained(page,'.pd-combo-guide,.pd-combo-guide-copy,.pd-combo-guide-step,.pd-flavor-chip,.pd-combo-unit-presentation,.pd-combo-unit-flavor');
+  await contained(page,'.pd-combo-guide,.pd-combo-guide-copy,.pd-combo-guide-step,.pd-flavor-chip,.pd-combo-unit-presentation,.pd-combo-unit-flavor,.pd-combo-opcion,.pd-combo-opt-name,.pd-combo-opt-desc,.pd-combo-qty-selector');
+  for (const option of await page.locator('.pd-combo-opcion:has(.pd-combo-qty-selector)').all()) {
+   const overlap=await option.evaluate(el=>{
+    const body=el.querySelector('.pd-combo-opt-body').getBoundingClientRect();
+    const qty=el.querySelector('.pd-combo-qty-selector').getBoundingClientRect();
+    return Math.min(body.bottom,qty.bottom)>Math.max(body.top,qty.top)+1 && Math.min(body.right,qty.right)>Math.max(body.left,qty.left)+1;
+   });
+   assert.equal(overlap,false,'La cantidad no invade el nombre del componente');
+   await option.locator('[data-action=increment]').click();
+   assert.equal(await option.locator('.pd-combo-qty-input').inputValue(),'1');
+  }
   const guide=page.locator('#pd-combo-guide');
   assert.equal(await guide.evaluate(el=>getComputedStyle(el).position),'static');
   assert.ok(await page.locator('.pd-combo-guide-steps').evaluate(el=>el.clientWidth>=el.parentElement.clientWidth-50),'Los pasos usan el ancho de la guía');

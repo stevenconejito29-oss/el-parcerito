@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from 'partials/heritage_icons.html' import heritage_icon, loyalty_icon %}
 {% block title %}{{ 'Confirma tu pedido' if requiere_confirmacion_whatsapp else '¡Pedido recibido!' }} — {{ brand.nombre }}{% endblock %}
-{% block styles %}
+{% block styles_components %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/order-confirmation.css', v=asset_version) }}">
 {% endblock %}
 {% block content %}
@@ -67,7 +67,7 @@
       <div><dt>Fecha</dt><dd>{{ pedido.creado_en.strftime('%d/%m/%Y · %H:%M') if pedido.creado_en else 'Registrado' }}</dd></div>
       <div><dt>Modalidad</dt><dd>{{ presentation.fulfillment_label }}</dd></div>
       {% if pedido.slot %}
-      <div><dt>Franja horaria</dt><dd><strong>{{ pedido.slot.fecha.strftime('%A %d/%m') }} · {{ pedido.slot.hora_inicio.strftime('%H:%M') }}–{{ pedido.slot.hora_fin.strftime('%H:%M') }}</strong></dd></div>
+      <div><dt>Franja de reparto</dt><dd><strong>{{ pedido.slot.fecha.strftime('%A %d/%m') }} · {{ pedido.slot.hora_inicio.strftime('%H:%M') }}–{{ pedido.slot.hora_fin.strftime('%H:%M') }}</strong><small class="order-route-note">La llegada depende de la ruta y la distancia entre paradas. Te avisaremos cuando tu pedido salga a reparto.</small></dd></div>
       {% endif %}
       <div><dt>Pago</dt><dd data-order-payment-label>{{ presentation.payment_label }}</dd></div>
       <div><dt>Estado actual</dt><dd data-order-status>{{ presentation.status_label }}</dd></div>
@@ -91,17 +91,19 @@
                style="background:var(--col-elevated)">{{ '🎁' if item.display_es_combo else '🥟' }}</div>
           {% endif %}
           <div class="min-w-0">
-            <p class="font-bold text-sm truncate" style="color:var(--col-text)">
+            <p class="font-bold text-sm order-item-name" style="color:var(--col-text)">
               {{ item.display_nombre }}
             </p>
             <p class="text-xs" style="color:var(--col-muted)">× {{ item.cantidad }}</p>
             {% include "partials/order_item_flavors.html" %}
             {% include "partials/order_item_presentation.html" %}
+            {% include "partials/public_order_item_details.html" %}
             {% if item.es_canje_puntos %}
             <p class="order-reward-label">Regalo canjeado · {{ item.reward_metadata.get('puntos', 0) }} {{ ui.loyalty_unit_plural }}</p>
             {% endif %}
-            {% if item.notas %}
-            <p class="text-xs order-item-note">{{ item.notas }}</p>
+            {% set customer_note = item.get_metadata().get("nota_cliente", item.notas) %}
+            {% if customer_note %}
+            <p class="text-xs order-item-note">{{ customer_note }}</p>
             {% endif %}
           </div>
         </div>

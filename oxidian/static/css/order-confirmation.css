@@ -98,3 +98,22 @@
 .order-confirmation .order-hero-meta{justify-content:flex-start;margin:.5rem 0 0 104px}.order-confirmation .order-hero-status{background:#ffd044!important;border-color:#ffe785!important;color:#282013!important;box-shadow:0 5px 13px rgba(0,0,0,.2)}
 .order-confirmation .order-live-note{background:rgba(3,20,39,.48);color:#fff!important}
 @media(max-width:380px){.order-hero-main{grid-template-columns:70px minmax(0,1fr);gap:.72rem}.order-confirmation .order-success-symbol{width:66px!important;height:66px!important}.order-confirmation .order-success-symbol>.ox-heritage-icon{width:38px;height:38px}.order-confirmation .order-hero-meta{margin-left:0;justify-content:center}.order-confirmation .order-hero-copy h1{font-size:1.28rem!important}.order-confirmation .order-hero-copy p{font-size:.72rem!important}}
+
+body.ox-body-public .order-confirmation :is(.order-item-name, .order-item-note, .order-item-details, .order-route-note) {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+body.ox-body-public .order-item-details {
+  margin-top: .5rem;
+  font-size: .8125rem;
+  line-height: 1.5;
+  text-align: start;
+}
+body.ox-body-public .order-item-details ul { padding: 0; margin: .25rem 0; list-style: none; }
+body.ox-body-public .order-item-details li + li { margin-top: .35rem; }
+body.ox-body-public :is(.order-item-details small, .order-route-note) { display: block; color: var(--col-muted); }
+body.ox-body-public .order-route-note { margin-top: .35rem; line-height: 1.5; font-weight: 400; }
+@media (max-width: 380px) {
+  body.ox-body-public .order-confirmation .order-amount { font-size: .8125rem; }
+}

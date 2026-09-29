@@ -52,6 +52,12 @@ try {
  }
  await page.setViewportSize({width:393,height:852});
  await page.goto(base+'/checkout');
+ for (const width of [280,320,393,768]) {
+  await page.setViewportSize({width,height:852});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`checkout ${width}px`);
+ }
+ await page.setViewportSize({width:393,height:852});
+ await page.screenshot({path:`/tmp/parcerito-${engine.name()}-checkout-revisado.png`,fullPage:true});
  await page.locator('[name=telefono_invitado]').fill('+346'+String(Math.floor(Math.random()*1e8)).padStart(8,'0'));
  await page.locator('[name=nombre_invitado]').fill('Cliente QA avisos previos');
  await page.locator('[name=tipo_entrega_cliente][value=recogida]').check();
@@ -61,6 +67,15 @@ try {
  await page.locator('button[type=submit]').click();
  await page.waitForURL(/\/pedido\/\d+\/confirmado/);
  assert.match(await page.locator('main').innerText(), /Portal 12, llamar al llegar/);
+ const detailText = (await page.locator('.order-item-details').allTextContents()).join(' ');
+ assert.match(detailText, /Contenido por combo/);
+ assert.match(detailText, /Extras por unidad/);
+ for (const width of [280,320,393,768]) {
+  await page.setViewportSize({width,height:852});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`ticket ${width}px`);
+ }
+ await page.setViewportSize({width:393,height:852});
+ await page.screenshot({path:`/tmp/parcerito-${engine.name()}-ticket-revisado.png`,fullPage:true});
  assert.doesNotMatch(await page.locator('main').innerText(), /\[Combo \d+|\d+#[a-f0-9]{12}/);
  assert.equal((await (await context.request.get(base+'/api/push/status?endpoint='+encodeURIComponent(pushEndpoint))).json()).this_device_active,true);
  const stranger=await browser.newContext();

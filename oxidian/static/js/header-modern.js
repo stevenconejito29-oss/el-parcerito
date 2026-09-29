@@ -5,6 +5,13 @@
   function init() {
     var header = document.querySelector('.ox-header-public');
     if (!header) return;
+    // La altura cambia al compactar la cabecera y con el texto ampliado.
+    function syncHeaderOffset() {
+      document.documentElement.style.setProperty('--header-height', header.getBoundingClientRect().height + 'px');
+    }
+    syncHeaderOffset();
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(syncHeaderOffset).observe(header);
+
 
     var progress = header.querySelector('.ox-hdr-progress');
     var reduceMotion = window.matchMedia &&

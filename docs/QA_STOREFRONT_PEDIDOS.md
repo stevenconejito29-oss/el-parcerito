@@ -217,3 +217,36 @@ REVIEW_BASE_URL=http://127.0.0.1:5077 node scripts/test_first_order_journey.mjs
 
 No requiere migración de datos: `push_subscriptions.user_id` ya admite NULL.
 Las pruebas de transporte no sustituyen la recepción física de push en iOS.
+
+### Revisión de componentes y franjas — 29/09/2026
+
+- Opciones de combo: las etiquetas auxiliares ocupan filas completas, los
+  contadores quedan centrados y se adaptan a 280 px con texto ampliado. La
+  cabecera comunica su altura real para no tapar controles al cambiar de paso.
+- Ticket público: desglose del snapshot (cantidades por combo/unidad, tamaños,
+  sabores y extras), nombres completos y ninguna serialización de IDs, costes o
+  proveedores. Las nuevas compras distinguen la nota escrita por el cliente del
+  resumen automático; los pedidos antiguos conservan sus notas.
+- Checkout: selector de franjas adaptable, textos claros y reserva efectiva al
+  enviar el pedido. El tiempo de zona se identifica como trayecto orientativo,
+  adicional a preparación y espera de salida.
+- Franjas existentes: reserva con capacidad/cierre, salida sólo dentro del
+  horario activo y con preparación completa, límites por tanda y peso. No se
+  han cambiado las modalidades de reparto ni su configuración en producción.
+- Ruta existente: Google Routes cuando está configurado; alternativa local por
+  cercanía con GPS. El mapa distingue ambas de un orden sin optimizar y aclara
+  que las líneas dibujadas unen paradas, no describen las calles.
+- Pendiente de evolución: persistir la secuencia de paradas por tanda y
+  recalcular estimaciones al entregar/reordenar. Hoy la secuencia se organiza
+  en el navegador del repartidor; no hay ETA individual fiable para prometer
+  al cliente. El orden de entrega no equivale al orden de compra.
+- Avisos previos al primer pedido: suscripción y vínculo posterior comprobados
+  con API/CSRF reales y navegador simulado; la recepción con la aplicación
+  cerrada necesita validación en un móvil físico.
+
+Validación de esta revisión: 986 pruebas Python (1 omitida); recorrido completo
+combo → recogida → confirmación `si` → ticket desde chat; revisión visual web/PWA
+280, 375, 852 y 1280 px y carrito/checkout/ticket 280–768 px. En producción, el
+endpoint VAPID valida las claves persistidas; Google Routes no está configurado
+(se usa la alternativa por cercanía). Backup previo verificado:
+`20260929-160246`, imagen de retorno `oxidian-release-rollback:3cf18ad`.

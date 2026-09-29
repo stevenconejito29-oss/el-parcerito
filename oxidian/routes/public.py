@@ -3375,6 +3375,7 @@ def checkout():
                 if item.get("nota_cliente"):
                     _partes_notas.append("👤 " + item["nota_cliente"])
                 item_metadata = dict(item.get("metadata") or {})
+                item_metadata["nota_cliente"] = item.get("nota_cliente") or ""
                 if _delivery_family(item["producto"]) == "programado":
                     # Congelar de forma explícita la fecha canónica del carrito.
                     # El snapshot del producto también la conserva, pero esta

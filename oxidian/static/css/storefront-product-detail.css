@@ -712,7 +712,7 @@ body.ox-body-public .pd-cstep-next.is-finish {
 :is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-opcion:has(.pd-combo-qty-selector) {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) !important;
-  align-items: start;
+  align-items: center;
   gap: .65rem !important;
 }
 :is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-opcion:has(.pd-combo-qty-selector) > .pd-combo-opt-thumb {
@@ -744,4 +744,62 @@ body.ox-body-public .pd-cstep-next.is-finish {
 :is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-qty-input {
   width: 44px !important;
   min-width: 0;
+}
+
+/* Cada bloque auxiliar ocupa una fila: nunca crea columnas implícitas. */
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-opcion > :is(.pd-combo-opt-alerg, .pd-combo-opt-sold, .pd-combo-presentation, .pd-combo-flavor, .pd-combo-units) {
+  grid-column: 1 / -1;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-opt-body {
+  min-width: 0;
+  text-align: start;
+  justify-content: center;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.pd-combo-opt-name, .pd-combo-opt-desc) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-qty-selector {
+  justify-content: center;
+  justify-self: center;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-qty-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 !important;
+  line-height: 1;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-qty-selector {
+  width: 100%;
+  max-width: 164px;
+  gap: .25rem;
+  margin: 0;
+  padding: 0;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-qty-control {
+  flex: 0 0 44px;
+  box-sizing: border-box;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .pd-combo-qty-input {
+  flex: 1 1 24px;
+  max-width: 44px;
+  min-width: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+  text-align: center;
+}
+@media (max-width: 380px) {
+  :is(html, html.ox-pwa-runtime) body.ox-body-public .pd-cstep { padding: .5rem !important; }
+}
+/* Los saltos entre pasos dejan visible el control bajo la cabecera fija. */
+html:has(#pd-add-form) {
+  scroll-padding-top: calc(var(--header-height, 0px) + .75rem);
+  scroll-padding-bottom: 7rem;
 }

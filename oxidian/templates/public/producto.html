@@ -3111,22 +3111,9 @@ void document.getElementById('pd-add-form')?.addEventListener('submit', function
   }
   const notasEl = document.getElementById('combo-sel-notes');
   if (!notasEl) return;
-  const sels = [];
-  // Radios (max_sel == 1)
-  document.querySelectorAll('.combo-item-choice:checked').forEach(input => {
-    const grupo = input.closest('.pd-combo-grupo')?.dataset.grupoNombre || '';
-    const label = input.closest('.pd-combo-opcion')?.querySelector('.pd-combo-opt-name')?.textContent?.trim();
-    if (label) sels.push(`${grupo}: ${label}`);
-  });
-  // Qty (max_sel > 1)
-  document.querySelectorAll('.combo-sel-qty').forEach(input => {
-    const qty = parseInt(input.value) || 0;
-    if (qty <= 0) return;
-    const grupo = input.closest('.pd-combo-grupo')?.dataset.grupoNombre || '';
-    const label = input.closest('.pd-combo-opcion')?.querySelector('.pd-combo-opt-name')?.textContent?.trim();
-    if (label) sels.push(`${grupo}: ${label}${qty > 1 ? ` ×${qty}` : ''}`);
-  });
-  notasEl.value = sels.join(' | ');
+  // El servidor genera el resumen desde las selecciones estructuradas.
+  // No guardarlo otra vez como si fuera una nota escrita por el cliente.
+  notasEl.value = '';
   // Estado agregado ANTES del submit: si algún paso está incompleto (grupo de
   // elección sin resolver, o base fija con sabores pendientes), bloqueamos el
   // POST y saltamos al primer bloque con foco. Anima el flash para reforzar.

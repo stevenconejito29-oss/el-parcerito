@@ -58,3 +58,28 @@ class OrderSnapshotIntegrityTest(unittest.TestCase):
             self.assertIn(text, html)
         self.assertNotIn("Socio de productos", html)
         self.assertNotIn("Catálogo editado", html)
+
+    def test_public_ticket_renders_frozen_components_without_internal_metadata(self):
+        component = {"nombre": "Empanada original", "cantidad": 2,
+                     "producto_id": 918273, "proveedor_nombre": "SOCIO_PRIVADO",
+                     "notas_preparacion": "SOLO_COCINA", "precio_costo_congelado": 1234,
+                     "unidades_cliente": [
+                         {"unidad": 1, "presentacion": {"label": "Grande original"},
+                          "sabor": {"nombre": "Pollo original", "id": 876543}},
+                         {"unidad": 2, "sabor": {"nombre": "Queso original"}}]}
+        self.item.metadata_json = json.dumps({
+            "combo": {"componentes": [component], "selecciones": [
+                {"grupo": "Bebida", "opciones": [{"nombre": "Zumo original", "cantidad": 1}]}]},
+            "extras": {"opciones": [{"nombre": "Salsa original", "cantidad": 2}]}})
+        app = Flask(__name__, template_folder=str(Path(__file__).resolve().parents[1] / "templates"))
+        with app.app_context():
+            html = render_template("partials/public_order_item_details.html", item=self.item)
+        for text in ("2 × Empanada original", "Grande original", "Pollo original", "Queso original", "Zumo original", "Salsa original", "Contenido por combo", "Extras por unidad"):
+            self.assertIn(text, html)
+        for text in ("918273", "876543", "SOCIO_PRIVADO", "SOLO_COCINA", "1234", "Catálogo editado"):
+            self.assertNotIn(text, html)
+        self.item.metadata_json = '{"combo":{"componentes":[],"selecciones":[]},"extras":{"opciones":[]}}'
+        with app.app_context():
+            html = render_template("partials/public_order_item_details.html", item=self.item)
+        self.assertNotIn('Contenido por combo', html)
+        self.assertNotIn('Catálogo editado', html)

@@ -1,0 +1,21 @@
+/* Geometría del formulario tras los estilos compartidos de la PWA. */
+body.ox-body-public .checkout-layout :is(.checkout-step, .checkout-head-copy, fieldset, .checkout-summary-price) { min-width: 0; }
+body.ox-body-public .checkout-layout :is(label, button, summary, p, li) { overflow-wrap: anywhere; }
+body.ox-body-public .checkout-layout :is(button, summary) { white-space: normal; }
+body.ox-body-public .checkout-layout .df-slot-list { grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
+body.ox-body-public #delivery-plan-choice .df-slot {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  text-align: start;
+}
+body.ox-body-public #delivery-plan-choice .df-slot small { grid-column: 2; }
+body.ox-body-public #form-checkout :is(input:not([type=radio]):not([type=checkbox]):not([type=hidden]), select, textarea) {
+  min-width: 0;
+  max-width: 100%;
+  font-size: 1rem;
+}
+@media (max-width: 380px) {
+  body.ox-body-public .checkout-layout .checkout-reward-code-row { grid-template-columns: minmax(0, 1fr); }
+  body.ox-body-public .checkout-layout details.ox-card li { grid-template-columns: minmax(0, 1fr); }
+}

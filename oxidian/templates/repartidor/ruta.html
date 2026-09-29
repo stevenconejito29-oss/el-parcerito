@@ -1108,7 +1108,7 @@ function renderRouteSequence(orderedStops) {
 let embeddedRouteMap = null;
 let embeddedRouteLayer = null;
 
-function showEmbeddedRoute(origin, stops) {
+function showEmbeddedRoute(origin, stops, source = 'visible') {
   const panel = document.querySelector('[data-route-map-panel]');
   const canvas = document.querySelector('[data-route-map]');
   if (!panel || !canvas || typeof L === 'undefined') return false;
@@ -1137,7 +1137,8 @@ function showEmbeddedRoute(origin, stops) {
   if (points.length > 1) L.polyline(points,{color:'#1769e0',weight:5,opacity:.78,dashArray:'10 7'}).addTo(embeddedRouteLayer);
   if (points.length) embeddedRouteMap.fitBounds(L.latLngBounds(points).pad(.18),{maxZoom:16});
   else embeddedRouteMap.setView([37.3891,-5.9845],12);
-  panel.querySelector('[data-route-map-summary]').textContent = `${stops.length} parada${stops.length === 1 ? '' : 's'} · orden optimizado disponible sin salir del PWA.`;
+  const routeExplanation = source === 'road' ? 'Orden calculado por carretera y tráfico.' : source === 'proximity' ? 'Orden aproximado por cercanía; no considera calles ni tráfico.' : 'Orden visible de las paradas; sin optimización vial.';
+  panel.querySelector('[data-route-map-summary]').textContent = `${stops.length} parada${stops.length === 1 ? '' : 's'} · ${routeExplanation} La línea del mapa une las paradas; abre navegación para seguir las calles.`;
   panel.querySelector('[data-route-map-external]').href = buildMapsRouteUrl(origin, stops);
   window.setTimeout(()=>embeddedRouteMap.invalidateSize(),80);
   panel.scrollIntoView({behavior:'smooth',block:'start'});
@@ -1178,7 +1179,7 @@ function openMultiStopRoute(scope) {
     const roadOrdered = await optimizeRoadOrder(origin, stops);
     const ordered = roadOrdered || (origin ? nearestNeighborOrder(origin, stops) : stops);
     if (scope === 'en_ruta') renderRouteSequence(ordered);
-    showEmbeddedRoute(origin, ordered);
+    showEmbeddedRoute(origin, ordered, roadOrdered ? 'road' : origin ? 'proximity' : 'visible');
   };
 
   // En iOS damos GPS un margen muy corto (o lo saltamos) porque cada
