@@ -85,6 +85,16 @@
     <a href="#avanzado">Avanzado</a>
   </nav>
 
+  {# Búsqueda instantánea: filtra los .cfg-field por texto del label y oculta
+     las secciones sin coincidencias. Sin backend, solo DOM. #}
+  <div class="cfg-search" role="search">
+    <label for="cfg-search-input" class="visually-hidden">Buscar ajuste</label>
+    <span class="cfg-search__icon" aria-hidden="true">🔍</span>
+    <input id="cfg-search-input" type="search" placeholder="Buscar ajuste (ej. horario, WhatsApp, IVA, bizum…)" autocomplete="off" spellcheck="false">
+    <button type="button" class="cfg-search__clear" aria-label="Limpiar búsqueda" hidden>×</button>
+    <p class="cfg-search__hint" hidden></p>
+  </div>
+
   <section class="cfg-status-grid">
     <a href="{{ url_for('admin.menu_config') }}"><span>Página pública</span><strong>Banners y contenido</strong><small>Editar inicio, menú y checkout</small></a>
     {% if brand.delivery %}<a href="{{ url_for('superadmin.zonas') }}"><span>Reparto</span><strong>{{ zonas|selectattr('activo')|list|length }} zonas activas</strong><small>Precios, cobertura y tiempos</small></a>{% endif %}
@@ -714,6 +724,64 @@ document.querySelectorAll('.cfg-nav a').forEach(link => link.addEventListener('c
 window.addEventListener('hashchange', () => cfgShowMobileSection(location.hash.slice(1)));
 cfgShowMobileSection(location.hash.slice(1) || new URLSearchParams(location.search).get('section') || 'tienda');
 
+// ── Búsqueda instantánea de ajustes ───────────────────────────────
+(function cfgSearch(){
+  const input = document.getElementById('cfg-search-input');
+  if (!input) return;
+  const clearBtn = document.querySelector('.cfg-search__clear');
+  const hint = document.querySelector('.cfg-search__hint');
+  const fields = [...document.querySelectorAll('.cfg-field')];
+  const sections = [...document.querySelectorAll('.cfg-section[id]')];
+  const navLinks = [...document.querySelectorAll('.cfg-nav a')];
+  // Precomputa texto de cada field: label + placeholder + help
+  const idx = fields.map(f => {
+    const label = f.querySelector('span')?.textContent || '';
+    const ph = f.querySelector('input,textarea,select')?.getAttribute('placeholder') || '';
+    const help = f.querySelector('small')?.textContent || '';
+    return (label + ' ' + ph + ' ' + help).toLowerCase();
+  });
+  function apply(q){
+    q = (q || '').trim().toLowerCase();
+    const hasQ = q.length >= 2;
+    let matches = 0;
+    const sectionsWithMatch = new Set();
+    fields.forEach((f, i) => {
+      const ok = !hasQ || idx[i].includes(q);
+      f.classList.toggle('cfg-hide', !ok);
+      if (ok && hasQ) {
+        matches++;
+        const sec = f.closest('.cfg-section');
+        if (sec) sectionsWithMatch.add(sec.id);
+      }
+    });
+    // Ocultar secciones sin coincidencias solo cuando hay query activa
+    sections.forEach(sec => {
+      const hide = hasQ && !sectionsWithMatch.has(sec.id);
+      sec.classList.toggle('cfg-section-hidden', hide);
+    });
+    navLinks.forEach(link => {
+      const id = link.hash.slice(1);
+      const dim = hasQ && !sectionsWithMatch.has(id);
+      link.classList.toggle('cfg-nav-dim', dim);
+    });
+    if (hasQ) {
+      hint.hidden = false;
+      hint.textContent = matches === 0
+        ? 'Sin coincidencias — probá con otra palabra.'
+        : `${matches} ajuste${matches === 1 ? '' : 's'} en ${sectionsWithMatch.size} sección${sectionsWithMatch.size === 1 ? '' : 'es'}.`;
+      clearBtn.hidden = false;
+      document.documentElement.classList.remove('cfg-ready');
+    } else {
+      hint.hidden = true;
+      clearBtn.hidden = true;
+      // Restaurar modo móvil (una sola sección visible) al limpiar
+      cfgShowMobileSection(location.hash.slice(1) || 'tienda');
+    }
+  }
+  let t;
+  input.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => apply(input.value), 90); });
+  clearBtn.addEventListener('click', () => { input.value = ''; apply(''); input.focus(); });
+})();
 </script>
 <style>
 /* Landscape móvil en superadmin config: colapsa el header, reduce padding
@@ -736,5 +804,45 @@ cfgShowMobileSection(location.hash.slice(1) || new URLSearchParams(location.sear
 .cfg-field input[type="number"] { inputmode: decimal; }
 .cfg-field input[type="tel"] { inputmode: tel; }
 .cfg-field input[type="email"] { inputmode: email; }
+
+/* ── Buscador de ajustes ─────────────────────────────────────── */
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+.cfg-search {
+  position: relative;
+  margin: 0 0 1rem;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: .4rem;
+  padding: .35rem .6rem;
+  background: var(--col-surface);
+  border: 1px solid var(--col-border);
+  border-radius: 10px;
+  transition: border-color .15s, box-shadow .15s;
+}
+.cfg-search:focus-within {
+  border-color: color-mix(in srgb, var(--brand-primary) 55%, var(--col-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 15%, transparent);
+}
+.cfg-search__icon { font-size: .9rem; opacity: .7; }
+.cfg-search input {
+  border: 0; background: transparent; color: var(--col-text);
+  font-size: .95rem; padding: .4rem 0; min-height: 36px; width: 100%;
+  outline: none;
+}
+.cfg-search input::-webkit-search-cancel-button { display: none; }
+.cfg-search__clear {
+  border: 0; background: var(--col-elevated); color: var(--col-text);
+  width: 26px; height: 26px; border-radius: 50%; cursor: pointer;
+  font-size: 1.1rem; line-height: 1; display: grid; place-items: center;
+}
+.cfg-search__clear:hover { background: var(--col-border); }
+.cfg-search__hint {
+  grid-column: 1 / -1; margin: .3rem 0 0; font-size: .72rem;
+  color: var(--col-muted);
+}
+.cfg-field.cfg-hide { display: none !important; }
+.cfg-section.cfg-section-hidden { display: none !important; }
+.cfg-nav a.cfg-nav-dim { opacity: .35; }
 </style>
 {% endblock %}

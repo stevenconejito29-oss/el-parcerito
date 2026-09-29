@@ -354,7 +354,7 @@
     {% set _in = (delivery_modes.inmediato if delivery_modes is defined else true) %}
     {% set _fr = (delivery_modes.franjas if delivery_modes is defined else false) %}
     {% set _fs = franja_stats or {'hoy':0,'manana':0,'proximas_7d':0,'total_futuras':0} %}
-    <div class="oa-panel sa-reparto-panel" style="margin-top:.9rem;">
+    <div id="reparto" class="oa-panel sa-reparto-panel" style="margin-top:.9rem;scroll-margin-top:70px;">
       <div class="sa-reparto-header">
         <div>
           <p class="sa-reparto-eyebrow">Modo de reparto</p>
