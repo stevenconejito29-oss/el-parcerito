@@ -127,6 +127,53 @@ QUICK_ACTIONS = {
 # Snapshot del negocio (delegado a la infra existente)
 # ─────────────────────────────────────────────────────────────────────
 
+def _slim_snapshot(snap: dict) -> dict:
+    """Comprime el snapshot para caber cómodamente en el TPM de proveedores
+    con free tier (Groq ~6-30k TPM). Mantiene lo esencial:
+
+    - Todos los `insights` derivados (comparativas, top rentabilidad,
+      cross-sell, anomalías) — son lo más valioso.
+    - Resúmenes de ventas y catálogo pero SIN el listado completo de 200
+      productos: solo top 10.
+    - Elimina zonas/cupones detallados; deja contadores.
+    """
+    if not isinstance(snap, dict):
+        return snap
+    slim = {}
+    # 1) Insights derivados — siempre íntegros
+    if "insights" in snap:
+        slim["insights"] = snap["insights"]
+    # 2) Metadatos del negocio
+    for k in ("negocio", "modo", "tipo_tienda", "fecha", "dia_semana",
+              "features_activos", "horario_hoy"):
+        if k in snap:
+            slim[k] = snap[k]
+    # 3) Ventas: solo agregados
+    if "ventas" in snap:
+        slim["ventas_resumen"] = snap["ventas"]
+    # 4) Catálogo: solo top 10 por popularidad si viene lista completa
+    for k in ("productos", "catalogo", "menu"):
+        v = snap.get(k)
+        if isinstance(v, list) and len(v) > 10:
+            slim[f"{k}_top10"] = v[:10]
+            slim[f"{k}_total"] = len(v)
+        elif v is not None:
+            slim[k] = v
+    # 5) Top productos y categorías tal cual (ya son cortos)
+    for k in ("top_productos", "top_categorias", "ventas_por_dia_semana",
+              "metodos_pago", "fidelidad", "operativa", "stock_bajo"):
+        if k in snap:
+            slim[k] = snap[k]
+    # 6) Zonas y cupones: solo contadores
+    if isinstance(snap.get("zonas"), list):
+        slim["zonas_activas_count"] = sum(1 for z in snap["zonas"] if z.get("activo"))
+        slim["zonas_total"] = len(snap["zonas"])
+    if isinstance(snap.get("cupones"), list):
+        slim["cupones_activos_count"] = sum(1 for c in snap["cupones"] if c.get("activo"))
+        slim["cupones_total"] = len(snap["cupones"])
+    return slim
+
+
 def build_snapshot() -> dict:
     """Devuelve el snapshot agregado que se inyecta como contexto al modelo.
 
@@ -264,7 +311,8 @@ def preguntar(
         fuente=("quick_action" if quick_action else None),
     )
 
-    contexto = build_snapshot()
+    contexto_full = build_snapshot()
+    contexto = _slim_snapshot(contexto_full)  # comprime para caber en TPM del proveedor
     historial = _historial_para_modelo(conv)
 
     # Delega al llamador externo existente para no duplicar el prompt system.
@@ -273,8 +321,7 @@ def preguntar(
 
     # El proveedor externo espera pregunta + contexto. Le pasamos como
     # "pregunta" la última del usuario, prefijada con un resumen del hilo
-    # cuando hay histórico previo (más de 1 turno). Así no forzamos un cambio
-    # de firma en _llamar_ia_analisis y mantenemos compatibilidad total.
+    # cuando hay histórico previo (más de 1 turno).
     if len(historial) > 2:
         prefijo_hilo = _resumir_historial(historial[:-1])
         pregunta_efectiva = f"{prefijo_hilo}\n\nMi pregunta actual:\n{pregunta}"
@@ -283,14 +330,39 @@ def preguntar(
 
     respuesta_ext, error_ext = _llamar_ia_analisis(pregunta_efectiva, contexto)
 
+    # Fallback automático: si el modelo principal devuelve 429 (rate limit),
+    # reintentamos con un modelo alternativo más ligero del mismo proveedor.
+    # Esto evita que el usuario vea "Motor local" cuando en realidad solo
+    # excedimos el TPM del modelo grande — el chico suele tener más margen.
+    if not respuesta_ext and error_ext and ("429" in error_ext or "rate" in error_ext.lower()):
+        from routes.superadmin_ai import FALLBACK_MODELS
+        provider = (SiteConfig.get("COMMERCIAL_AI_PROVIDER", "") or "").strip().lower()
+        model_actual = SiteConfig.get("COMMERCIAL_AI_MODEL", "") or ""
+        model_fallback = FALLBACK_MODELS.get(provider)
+        if model_fallback and model_fallback != model_actual:
+            # Overriding temporal: cambiamos el modelo activo solo para esta
+            # llamada, luego lo restauramos.
+            SiteConfig.set("COMMERCIAL_AI_MODEL", model_fallback, descripcion="fallback 429 temporal")
+            try:
+                respuesta_ext, error_ext = _llamar_ia_analisis(pregunta_efectiva, contexto)
+            finally:
+                SiteConfig.set("COMMERCIAL_AI_MODEL", model_actual, descripcion="restauración post-fallback")
+
     if respuesta_ext:
         fuente = "external"
         texto = respuesta_ext
         error_visible = None
     else:
-        # Fallback local — siempre devuelve algo.
+        # Fallback local — siempre devuelve algo. Prefijamos el texto con el
+        # motivo real del fallo del proveedor externo para que el super admin
+        # no piense que la IA nunca respondió; puede corregir el modelo o key.
         diagnostico = build_commercial_diagnostic()
-        texto = answer_commercial_question(pregunta, diagnostico)
+        texto_local = answer_commercial_question(pregunta, diagnostico)
+        motivo = _explicar_error_proveedor(error_ext)
+        if motivo:
+            texto = f"⚠️ {motivo}\n\n---\n\n{texto_local}"
+        else:
+            texto = texto_local
         fuente = "local"
         error_visible = None if error_ext == "external_not_configured" else error_ext
 
@@ -302,6 +374,43 @@ def preguntar(
         conversacion_id=conv.id,
         mensaje_id=msg.id,
     )
+
+
+def _explicar_error_proveedor(error_ext: str | None) -> str | None:
+    """Convierte el error crudo del proveedor en un mensaje corto y accionable
+    para mostrar al super admin encima de la respuesta local de fallback."""
+    if not error_ext or error_ext == "external_not_configured":
+        return None
+    e = error_ext.lower()
+    if "429" in e or "rate" in e or "quota" in e or "cuota" in e:
+        return (
+            "El proveedor externo rechazó la petición por límite de cuota "
+            "(429). Probá cambiar el modelo en /superadmin/ai/ por uno más "
+            "chico como `llama-3.1-8b-instant` (Groq), o esperá 1 minuto "
+            "y reintentá. Mientras tanto respondo con el motor local."
+        )
+    if "401" in e or "403" in e or "rechazad" in e:
+        return (
+            "El proveedor externo rechazó la API key (401/403). Revisá que "
+            "la key sea válida en el portal del proveedor y guardala de "
+            "nuevo en /superadmin/ai/. Mientras tanto respondo con el "
+            "motor local."
+        )
+    if "404" in e or "no encontrado" in e or "not found" in e:
+        return (
+            "El modelo configurado no existe en el proveedor. Revisá el "
+            "nombre exacto en /superadmin/ai/ (ej. Groq: "
+            "`llama-3.3-70b-versatile`). Mientras tanto respondo con el "
+            "motor local."
+        )
+    if "timeout" in e:
+        return (
+            "El proveedor externo tardó demasiado en responder. Puede ser "
+            "carga puntual — reintentá en unos segundos. Mientras tanto "
+            "respondo con el motor local."
+        )
+    # Otros errores: mostrar tal cual pero acotado
+    return f"El proveedor externo falló: {error_ext[:180]}. Respondo con el motor local."
 
 
 def _resumir_historial(mensajes: Iterable[dict]) -> str:

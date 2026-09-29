@@ -200,8 +200,17 @@ def snapshot_json():
 
 # Modelos por defecto recomendados por proveedor (para pintar en el form).
 DEFAULT_MODELS = {
-    "groq": "llama-3.3-70b-versatile",
+    # Recomendaciones: modelos con TPM (tokens/min) generoso en free tier.
+    "groq": "llama-3.3-70b-versatile",   # 30k TPM · 30 RPM en free · calidad alta
     "anthropic": "claude-3-5-sonnet-latest",
+    "openai": "gpt-4o-mini",
+}
+
+# Modelos alternativos más ligeros por proveedor — se usan como fallback
+# automático cuando el principal devuelve 429 (rate limit).
+FALLBACK_MODELS = {
+    "groq": "llama-3.1-8b-instant",       # 30k TPM · 30 RPM · responde ~2× más rápido
+    "anthropic": "claude-3-5-haiku-latest",
     "openai": "gpt-4o-mini",
 }
 
