@@ -3300,13 +3300,16 @@ def responder_confirmacion_pedido():
             ),
         })
 
+    # Busca cualquier pedido con confirmación pendiente. Si el operativo
+    # avanzó el estado (p. ej. a "armando") antes de que llegara la confirmación,
+    # esa carrera antes devolvía "sin_pendiente" en silencio — el cliente
+    # confirmaba pero el pedido quedaba sin preparador asignado (distribución
+    # bloqueada por confirmacion_estado=pending). Ahora tratamos el caso
+    # explícitamente: la confirmación aún es válida (identidad verificada),
+    # solo dejamos el pedido en su estado avanzado y activamos la distribución.
     pedido = (
         Order.query
         .filter_by(cliente_id=cliente.id, confirmacion_estado="pending")
-        # Un pedido pendiente de verificación nunca debería estar armando. Si
-        # hay un dato legacy inconsistente, no lo confirmamos silenciosamente:
-        # debe revisarlo un agente antes de seguir procesándolo.
-        .filter(Order.estado == "pendiente")
         .order_by(Order.creado_en.desc())
         .with_for_update()
         .first()
@@ -3320,6 +3323,14 @@ def responder_confirmacion_pedido():
                 "Si necesitas ayuda, abre el chat dentro de nuestra app."
             ),
         })
+    if pedido.estado != "pendiente":
+        # Estado inconsistente: el operativo ya lo avanzó sin esperar. Dejamos
+        # trazabilidad y aceptamos la confirmación de todas formas para
+        # desbloquear la distribución.
+        current_app.logger.warning(
+            "responder_confirmacion: race pedido=%s estado=%s confirmacion=pending",
+            pedido.id, pedido.estado,
+        )
 
     if accion == "confirmar":
         try:

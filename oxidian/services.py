@@ -481,14 +481,32 @@ def marcar_pedido_confirmado(pedido: Order) -> bool:
     try:
         distribuir_pedido(pedido)
         encolar_notificaciones_proveedores_pedido(pedido)
-    except Exception:
+    except Exception as exc:
         # La identidad ya quedó verificada; una incidencia de asignación no
         # debe obligar al cliente a confirmar otra vez. La cola operativa puede
-        # recuperar el pedido sin asignar y el fallo queda trazado.
+        # recuperar el pedido sin asignar y el fallo queda trazado — en logs y
+        # en AuditLog para que el admin lo vea en /superadmin/audit sin depender
+        # de tail -f al contenedor.
         logger.exception(
             "No se pudo activar completamente el pedido confirmado %s",
             getattr(pedido, "id", None),
         )
+        try:
+            from models import AuditLog
+            AuditLog.registrar(
+                None,
+                "pedido_confirmado_sin_distribuir",
+                recurso="order",
+                recurso_id=pedido.id,
+                detalle=(
+                    f"Pedido {pedido.numero_pedido} quedó confirmado pero la "
+                    f"distribución falló: {type(exc).__name__}: {exc}. Requiere "
+                    f"asignación manual desde el panel."
+                ),
+            )
+        except Exception:
+            # AuditLog nunca debe tumbar la confirmación del cliente.
+            logger.exception("AuditLog registrar falló para pedido %s", pedido.id)
     logger.info("confirmacion confirmed pedido=%s", pedido.numero_pedido)
     return True
 
