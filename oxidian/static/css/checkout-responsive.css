@@ -19,3 +19,4 @@ body.ox-body-public #form-checkout :is(input:not([type=radio]):not([type=checkbo
   body.ox-body-public .checkout-layout .checkout-reward-code-row { grid-template-columns: minmax(0, 1fr); }
   body.ox-body-public .checkout-layout details.ox-card li { grid-template-columns: minmax(0, 1fr); }
 }
+body.ox-body-public .checkout-layout [hidden] { display: none !important; }

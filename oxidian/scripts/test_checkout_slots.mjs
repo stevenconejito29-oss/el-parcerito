@@ -13,6 +13,8 @@ try {
   await page.locator('#franjas-slot-container input').first().waitFor();
   const selected = await page.locator('#franjas-slot-id').inputValue();
   assert.ok(selected);
+  assert.equal(await page.locator('#franjas-slot-retry').isVisible(),false);
+  assert.equal(await page.locator('#franjas-slot-error').isVisible(),false);
   assert.match(await page.locator('#franjas-slot-selected').innerText(),/Franja elegida/);
   for (const width of [280,320,393,768]) {
     await page.setViewportSize({width,height:852});
