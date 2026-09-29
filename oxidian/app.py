@@ -602,7 +602,7 @@ def create_app(env="default"):
         import time
         return {
             "asset_version": app.config.get("ASSET_VERSION", ""),
-            "ui_build": "2026-09-29-v10 · liquid-glass · franjas-mutex · cocina-repartidor-dual · superadmin-reparto-panel · config-search · config-scrollspy-dirty · sa-health-strip",
+            "ui_build": "2026-09-29-v11 · liquid-glass · franjas-mutex · superadmin-reparto-panel · config-search-dropdown · config-cmdk · config-fab-top · sa-health-strip",
             "server_time": time.strftime("%Y-%m-%d %H:%M:%S %Z"),
             "note": "Si esta fecha es reciente pero la app se ve vieja, es cache del navegador. Purga y recarga.",
         }, 200

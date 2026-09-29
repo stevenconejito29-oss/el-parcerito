@@ -85,15 +85,19 @@
     <a href="#avanzado">Avanzado</a>
   </nav>
 
-  {# Búsqueda instantánea: filtra los .cfg-field por texto del label y oculta
-     las secciones sin coincidencias. Sin backend, solo DOM. #}
+  {# Búsqueda instantánea: filtra los .cfg-field por texto del label + dropdown
+     de resultados con salto directo (Enter o click). Sin backend, solo DOM. #}
   <div class="cfg-search" role="search">
     <label for="cfg-search-input" class="visually-hidden">Buscar ajuste</label>
     <span class="cfg-search__icon" aria-hidden="true">🔍</span>
     <input id="cfg-search-input" type="search" placeholder="Buscar ajuste (ej. horario, WhatsApp, IVA, bizum…)" autocomplete="off" spellcheck="false">
     <button type="button" class="cfg-search__clear" aria-label="Limpiar búsqueda" hidden>×</button>
     <p class="cfg-search__hint" hidden></p>
+    <ul class="cfg-search__results" role="listbox" hidden></ul>
   </div>
+
+  {# FAB "volver arriba" — solo visible con scroll considerable. #}
+  <button type="button" class="cfg-fab-top" aria-label="Volver al inicio" hidden>↑</button>
 
   <section class="cfg-status-grid">
     <a href="{{ url_for('admin.menu_config') }}"><span>Página pública</span><strong>Banners y contenido</strong><small>Editar inicio, menú y checkout</small></a>
@@ -773,14 +777,42 @@ cfgShowMobileSection(location.hash.slice(1) || new URLSearchParams(location.sear
   });
 })();
 
-// ── Atajo teclado: "/" enfoca la búsqueda ────────────────────────
+// ── Atajos de teclado: "/" o Cmd/Ctrl+K enfocan la búsqueda ──────
 document.addEventListener('keydown', (e) => {
-  if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
-  const t = document.activeElement;
-  if (t && ['INPUT','TEXTAREA','SELECT'].includes(t.tagName)) return;
   const input = document.getElementById('cfg-search-input');
-  if (input) { e.preventDefault(); input.focus(); input.select(); }
+  if (!input) return;
+  const isCmdK = (e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey);
+  const isSlash = e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey;
+  if (!isCmdK && !isSlash) return;
+  const t = document.activeElement;
+  if (isSlash && t && ['INPUT','TEXTAREA','SELECT'].includes(t.tagName)) return;
+  e.preventDefault();
+  input.focus();
+  input.select();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 });
+
+// ── FAB "volver arriba" ──────────────────────────────────────────
+(function cfgFabTop(){
+  const btn = document.querySelector('.cfg-fab-top');
+  if (!btn) return;
+  const toggle = () => { btn.hidden = window.scrollY < 400; };
+  window.addEventListener('scroll', toggle, { passive: true });
+  btn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  toggle();
+})();
+
+// ── Highlight temporal al saltar a un field ──────────────────────
+function cfgJumpToField(field){
+  if (!field) return;
+  field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  field.classList.remove('cfg-field-pulse');
+  // Reflow para reiniciar la animación
+  void field.offsetWidth;
+  field.classList.add('cfg-field-pulse');
+  const input = field.querySelector('input, textarea, select');
+  if (input && !input.disabled) setTimeout(() => input.focus({ preventScroll: true }), 380);
+}
 
 // ── Búsqueda instantánea de ajustes ───────────────────────────────
 (function cfgSearch(){
@@ -788,31 +820,57 @@ document.addEventListener('keydown', (e) => {
   if (!input) return;
   const clearBtn = document.querySelector('.cfg-search__clear');
   const hint = document.querySelector('.cfg-search__hint');
+  const results = document.querySelector('.cfg-search__results');
   const fields = [...document.querySelectorAll('.cfg-field')];
   const sections = [...document.querySelectorAll('.cfg-section[id]')];
   const navLinks = [...document.querySelectorAll('.cfg-nav a')];
+  // Mapa id → nombre de sección para el dropdown
+  const sectionName = {};
+  sections.forEach(sec => {
+    const h = sec.querySelector('.cfg-section-head h2, > h2');
+    sectionName[sec.id] = (h ? h.textContent : sec.id).trim();
+  });
   // Precomputa texto de cada field: label + placeholder + help
   const idx = fields.map(f => {
-    const label = f.querySelector('span')?.textContent || '';
+    const label = (f.querySelector('span')?.textContent || '').trim();
     const ph = f.querySelector('input,textarea,select')?.getAttribute('placeholder') || '';
     const help = f.querySelector('small')?.textContent || '';
-    return (label + ' ' + ph + ' ' + help).toLowerCase();
+    const secId = f.closest('.cfg-section')?.id || '';
+    return { label, hay: (label + ' ' + ph + ' ' + help).toLowerCase(), secId };
   });
+  let activeResult = -1;
+  let currentMatches = [];
+
+  function renderResults(matches){
+    if (!results) return;
+    if (!matches.length) {
+      results.hidden = true;
+      results.innerHTML = '';
+      return;
+    }
+    results.hidden = false;
+    results.innerHTML = matches.slice(0, 12).map((m, i) => `
+      <li role="option" data-idx="${m.i}" class="cfg-search__result${i === activeResult ? ' is-active' : ''}">
+        <strong>${escapeHtml(m.label)}</strong>
+        <small>${escapeHtml(sectionName[m.secId] || '')}</small>
+      </li>
+    `).join('');
+  }
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
   function apply(q){
     q = (q || '').trim().toLowerCase();
     const hasQ = q.length >= 2;
-    let matches = 0;
+    let matches = [];
     const sectionsWithMatch = new Set();
     fields.forEach((f, i) => {
-      const ok = !hasQ || idx[i].includes(q);
+      const ok = !hasQ || idx[i].hay.includes(q);
       f.classList.toggle('cfg-hide', !ok);
       if (ok && hasQ) {
-        matches++;
-        const sec = f.closest('.cfg-section');
-        if (sec) sectionsWithMatch.add(sec.id);
+        matches.push({ i, label: idx[i].label, secId: idx[i].secId });
+        sectionsWithMatch.add(idx[i].secId);
       }
     });
-    // Ocultar secciones sin coincidencias solo cuando hay query activa
     sections.forEach(sec => {
       const hide = hasQ && !sectionsWithMatch.has(sec.id);
       sec.classList.toggle('cfg-section-hidden', hide);
@@ -822,23 +880,57 @@ document.addEventListener('keydown', (e) => {
       const dim = hasQ && !sectionsWithMatch.has(id);
       link.classList.toggle('cfg-nav-dim', dim);
     });
+    currentMatches = matches;
+    activeResult = matches.length ? 0 : -1;
     if (hasQ) {
       hint.hidden = false;
-      hint.textContent = matches === 0
+      hint.textContent = matches.length === 0
         ? 'Sin coincidencias — probá con otra palabra.'
-        : `${matches} ajuste${matches === 1 ? '' : 's'} en ${sectionsWithMatch.size} sección${sectionsWithMatch.size === 1 ? '' : 'es'}.`;
+        : `${matches.length} ajuste${matches.length === 1 ? '' : 's'} en ${sectionsWithMatch.size} sección${sectionsWithMatch.size === 1 ? '' : 'es'} · ↑↓ Enter para saltar`;
       clearBtn.hidden = false;
       document.documentElement.classList.remove('cfg-ready');
+      renderResults(matches);
     } else {
       hint.hidden = true;
       clearBtn.hidden = true;
-      // Restaurar modo móvil (una sola sección visible) al limpiar
+      renderResults([]);
       cfgShowMobileSection(location.hash.slice(1) || 'tienda');
     }
   }
+
+  function jumpToMatch(idxNum){
+    const field = fields[idxNum];
+    if (!field) return;
+    input.value = '';
+    apply('');
+    // pequeño delay para que la sección oculta se muestre antes de scrollear
+    requestAnimationFrame(() => cfgJumpToField(field));
+  }
+
   let t;
   input.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => apply(input.value), 90); });
   clearBtn.addEventListener('click', () => { input.value = ''; apply(''); input.focus(); });
+
+  // Navegación por teclado dentro del input
+  input.addEventListener('keydown', (e) => {
+    if (!currentMatches.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); activeResult = Math.min(activeResult + 1, currentMatches.length - 1); renderResults(currentMatches); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); activeResult = Math.max(activeResult - 1, 0); renderResults(currentMatches); }
+    else if (e.key === 'Enter') { e.preventDefault(); const m = currentMatches[activeResult]; if (m) jumpToMatch(m.i); }
+    else if (e.key === 'Escape') { input.value = ''; apply(''); input.blur(); }
+  });
+
+  // Click en un resultado
+  results?.addEventListener('click', (e) => {
+    const li = e.target.closest('.cfg-search__result');
+    if (li) jumpToMatch(parseInt(li.dataset.idx, 10));
+  });
+
+  // Cerrar dropdown al perder foco
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.cfg-search')) results.hidden = true;
+  });
+  input.addEventListener('focus', () => { if (currentMatches.length) results.hidden = false; });
 })();
 </script>
 <style>
@@ -933,14 +1025,14 @@ document.addEventListener('keydown', (e) => {
   box-shadow: 0 0 0 2px color-mix(in srgb, #FFAB00 12%, transparent);
 }
 
-/* Hint del atajo "/" en la barra de búsqueda */
+/* Hint del atajo "/" o Cmd+K en la barra de búsqueda */
 .cfg-search::before {
-  content: '/';
+  content: '⌘K · /';
   position: absolute;
   right: 48px;
   top: 50%;
   transform: translateY(-50%);
-  font-size: .7rem;
+  font-size: .68rem;
   font-weight: 800;
   color: var(--col-muted);
   background: var(--col-elevated);
@@ -948,8 +1040,80 @@ document.addEventListener('keydown', (e) => {
   border-radius: 4px;
   pointer-events: none;
   opacity: .8;
+  letter-spacing: .02em;
 }
 .cfg-search:focus-within::before { display: none; }
 @media (max-width: 480px) { .cfg-search::before { display: none; } }
+
+/* Dropdown de resultados */
+.cfg-search__results {
+  grid-column: 1 / -1;
+  list-style: none;
+  margin: .5rem 0 0;
+  padding: .25rem;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--col-surface);
+  border: 1px solid var(--col-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px color-mix(in srgb, #000 15%, transparent);
+}
+.cfg-search__result {
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+  padding: .55rem .7rem;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background .1s;
+}
+.cfg-search__result:hover,
+.cfg-search__result.is-active {
+  background: color-mix(in srgb, var(--brand-primary) 14%, var(--col-elevated));
+}
+.cfg-search__result strong {
+  font-size: .82rem;
+  color: var(--col-text);
+  font-weight: 700;
+}
+.cfg-search__result small {
+  font-size: .68rem;
+  color: var(--col-muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+/* Pulse al saltar a un field */
+@keyframes cfg-field-pulse-kf {
+  0%   { background: color-mix(in srgb, var(--brand-primary) 22%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 35%, transparent); }
+  60%  { background: color-mix(in srgb, var(--brand-primary) 8%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 12%, transparent); }
+  100% { background: transparent; box-shadow: 0 0 0 0 transparent; }
+}
+.cfg-field-pulse {
+  animation: cfg-field-pulse-kf 1.6s ease-out;
+  border-radius: 8px;
+}
+
+/* FAB volver arriba */
+.cfg-fab-top {
+  position: fixed;
+  right: 1rem;
+  bottom: 1.2rem;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 0;
+  background: linear-gradient(135deg, var(--brand-primary), color-mix(in srgb, var(--brand-primary) 70%, #000));
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--brand-primary) 40%, transparent);
+  z-index: 60;
+  transition: transform .15s, box-shadow .15s;
+}
+.cfg-fab-top:hover { transform: translateY(-2px); box-shadow: 0 10px 24px color-mix(in srgb, var(--brand-primary) 55%, transparent); }
+.cfg-fab-top:active { transform: translateY(0); }
+@media (max-width: 480px) { .cfg-fab-top { right: .7rem; bottom: .8rem; } }
 </style>
 {% endblock %}
