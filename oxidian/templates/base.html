@@ -24,7 +24,7 @@
   <meta name="msapplication-TileColor" content="{{ brand.color_primario }}">
   <meta name="msapplication-navbutton-color" content="{{ brand.color_primario }}">
   <meta name="ox-pwa-mode" content="public">
-  <meta name="ox-push-eligible" content="{{ '1' if (private_customer or session.get('push_cliente_id')) else '0' }}">
+  <meta name="ox-push-eligible" content="{{ '1' if push_eligible else '0' }}">
   <meta name="ox-cart-count" content="{{ session.get('carrito', {})|length }}">
   <meta name="ox-csrf-token" content="{{ csrf_token() }}">
   <meta name="ox-asset-version" content="{{ asset_version }}">
@@ -243,7 +243,7 @@
      Si el usuario abre "Ver código fuente" en el navegador y ve este
      comentario, confirma que la HTML llegó fresh del server. Si no lo
      ve, el navegador está sirviendo HTML cacheado. #}
-  <!-- oxidian-ui-build: 2026-09-28-v3 · liquid-glass · article-cards · combo-units-responsive · extras-stepper-fix -->
+  <!-- oxidian-ui-build: 2026-09-29-v5 · liquid-glass · combo-responsive · franjas-mutex · df-slot-glass -->
   {# Meta cache-control agresivo: fuerza al navegador y proxies a revalidar
      el HTML en cada visita. El HTML es network-first en el SW; aquí lo
      reforzamos por si el navegador ignora la política del SW. #}
@@ -389,7 +389,7 @@
 
 {% include 'partials/pwa_install_sheet.html' %}
 
-{% if (private_customer or session.get('push_cliente_id')) %}
+{% if push_eligible %}
 <div class="ox-push-prompt" id="ox-push-prompt" hidden>
   <span class="ox-push-prompt-icon" aria-hidden="true">🔔</span>
   <div class="ox-push-prompt-copy"><strong>{{ ui.pwa_push_title }}</strong><small>{{ ui.pwa_push_text }}</small></div>
@@ -593,9 +593,9 @@
         <div class="ox-app-tools-actions">
           <button type="button" data-pwa-install><span class="ox-install-text">{{ ui.pwa_install }}</span></button>
           <button type="button" data-storage-prepare>{{ ui.pwa_offline }}</button>
-          {% if (private_customer or session.get('push_cliente_id')) %}<button type="button" data-push-activate>{{ ui.pwa_notifications }}</button>{% endif %}
+          {% if push_eligible %}<button type="button" data-push-activate>{{ ui.pwa_notifications }}</button>{% endif %}
           <button type="button" data-pwa-check-update>Buscar actualización</button>
-          {% if (private_customer or session.get('push_cliente_id')) %}<button type="button" data-push-sound-test>Probar aviso y sonido</button>{% endif %}
+          {% if push_eligible %}<button type="button" data-push-sound-test>Probar aviso y sonido</button>{% endif %}
         </div>
         <p id="ox-app-tools-status" aria-live="polite"></p>
       </div>

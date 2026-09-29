@@ -1683,6 +1683,132 @@ body.ox-body-public :is(.cr-wrap, .checkout-layout, .pd-detail, .ep-page) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   PACK RESPONSIVE ÚLTIMO RECURSO — selectores máxima especificidad
+   para vencer CUALQUIER CSS previo. Combos + productos-con-sabor.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Contenedor principal del combo builder */
+html body.ox-body-public .pd-card .pd-box-combo,
+html body.ox-body-public .pd-card [class*="pd-cstep"] {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  overflow-wrap: anywhere !important;
+}
+
+/* Textos internos del combo — WRAP forzado a máxima especificidad */
+html body.ox-body-public :is(.pd-cstep-ttl, .pd-cstep-sub, .pd-cstep-progress,
+                             .pd-cstep-badge, .pd-combo-opt-name,
+                             .pd-combo-opt-desc, .pd-combo-item-name,
+                             .pd-combo-item-desc, .pd-combo-unit-label,
+                             .pd-box-title, .pd-box-sub, .pd-flavor-chip__name,
+                             .pd-extras h2, .pd-extras > p,
+                             .pd-extra-group legend,
+                             .pd-combo-guide-copy strong) {
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+  hyphens: auto !important;
+  line-height: 1.35 !important;
+  max-width: 100% !important;
+}
+
+/* Selects nativos del combo — anti-desbordamiento en móvil */
+html body.ox-body-public select.pd-combo-unit-flavor,
+html body.ox-body-public select.pd-combo-unit-presentation {
+  max-width: 100% !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* Sabores chips: siempre wrap, nunca overflow horizontal */
+html body.ox-body-public .pd-flavor-chips,
+html body.ox-body-public .pd-combo-flavor-chips {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: stretch !important;
+  gap: clamp(4px, 1.5vw, 8px) !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+html body.ox-body-public .pd-flavor-chip {
+  flex: 0 1 auto !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+/* Media query MÓVIL ≤430px con especificidad html body */
+@media (max-width: 430px) {
+  html body.ox-body-public .pd-cstep {
+    padding: 10px !important;
+    margin-bottom: 8px !important;
+  }
+  html body.ox-body-public .pd-cstep-hd {
+    grid-template-columns: 30px minmax(0, 1fr) auto !important;
+    gap: 8px !important;
+    padding: 6px 0 !important;
+  }
+  html body.ox-body-public .pd-cstep-num {
+    width: 30px !important; height: 30px !important;
+    min-width: 30px !important;
+    font-size: .82rem !important;
+  }
+  html body.ox-body-public .pd-cstep-ttl {
+    font-size: .92rem !important;
+    font-weight: 900 !important;
+  }
+  html body.ox-body-public .pd-cstep-sub {
+    font-size: .72rem !important;
+  }
+  html body.ox-body-public .pd-combo-item,
+  html body.ox-body-public .pd-combo-opcion {
+    padding: 8px !important;
+    gap: 8px !important;
+  }
+  html body.ox-body-public .pd-combo-opt-thumb,
+  html body.ox-body-public .pd-combo-thumb {
+    width: 42px !important; height: 42px !important;
+    min-width: 42px !important;
+    font-size: 1.1rem !important;
+  }
+  html body.ox-body-public .pd-combo-opt-name {
+    font-size: .84rem !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+  }
+  html body.ox-body-public .pd-combo-opt-desc {
+    font-size: .68rem !important;
+    word-spacing: .04em !important;
+  }
+  /* Selects del combo unit compactos */
+  html body.ox-body-public select.pd-combo-unit-flavor,
+  html body.ox-body-public select.pd-combo-unit-presentation {
+    min-height: 42px !important;
+    padding: 6px 26px 6px 10px !important;
+    font-size: 15px !important;
+  }
+  /* Extras compactos */
+  html body.ox-body-public .pd-extra-option {
+    padding: 8px !important;
+  }
+  html body.ox-body-public .pd-extra-stepper__btn {
+    min-width: 40px !important;
+    min-height: 40px !important;
+    font-size: 1.15rem !important;
+  }
+  html body.ox-body-public .pd-extra-option input.pd-extra-qty {
+    width: 42px !important;
+    font-size: 15px !important;
+  }
+  /* Sabores chips compactos */
+  html body.ox-body-public .pd-flavor-chip {
+    min-height: 42px !important;
+    padding: 6px 10px !important;
+    font-size: .78rem !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    COMBO STEP — refuerzo visual final (pasos hechos se colapsan más,
    paso activo se destaca más, textos sin desbordar nunca).
    ═══════════════════════════════════════════════════════════════════ */

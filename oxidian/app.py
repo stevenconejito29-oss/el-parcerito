@@ -167,8 +167,10 @@ def create_app(env="default"):
     def inject_private_customer():
         from customer_access import verified_customer, private_pwa_required
         protected = getattr(g, "private_customer_access", False)
+        from routes.push import _push_user, _push_allowed
         return {"private_customer": verified_customer() if protected else None,
-                "private_app_required": protected and private_pwa_required()}
+                "private_app_required": protected and private_pwa_required(),
+                "push_eligible": _push_allowed(_push_user())}
 
     @app.before_request
     def log_request_start():
@@ -590,6 +592,20 @@ def create_app(env="default"):
     @app.route("/health/live")
     def health_live():
         return {"status": "ok"}, 200
+
+    @app.route("/version")
+    def version_info():
+        """Endpoint público para verificar la versión desde el móvil del cliente.
+        Uso: abre https://elparcerito.com/version en tu móvil (o el server)
+        y compara con lo que ves en la app. Si dice fecha reciente pero la app
+        se ve vieja → cache del navegador, purgar."""
+        import time
+        return {
+            "asset_version": app.config.get("ASSET_VERSION", ""),
+            "ui_build": "2026-09-29-v5 · liquid-glass · combo-responsive · franjas-mutex",
+            "server_time": time.strftime("%Y-%m-%d %H:%M:%S %Z"),
+            "note": "Si esta fecha es reciente pero la app se ve vieja, es cache del navegador. Purga y recarga.",
+        }, 200
 
     @app.route("/health")
     @app.route("/health/ready")
