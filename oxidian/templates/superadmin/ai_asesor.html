@@ -1,0 +1,166 @@
+{% extends "admin_base.html" %}
+{% block title %}Asesor IA comercial · Super Admin{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/superadmin-ai-asesor.css', v=asset_version) }}">
+{% endblock %}
+
+{% block content %}
+<div class="ai-page">
+
+  <header class="ai-page-header">
+    <div>
+      <p class="ai-eyebrow">Asesor IA comercial</p>
+      <h1>Chat con tu analista de negocio</h1>
+      <p class="ai-subtitle">
+        Preguntas sobre finanzas, combos, promociones, cupones y campañas
+        con datos reales del negocio.
+        Fuente:
+        {% if estado_ia.enabled and estado_ia.key_set %}
+          <strong>{{ estado_ia.provider_label }}{% if estado_ia.model %} · {{ estado_ia.model }}{% endif %}</strong>
+        {% else %}
+          <strong>Motor local</strong>
+          <a href="{{ url_for('superadmin.config') }}#integraciones" class="ai-link-cfg">Configurar IA externa →</a>
+        {% endif %}
+      </p>
+    </div>
+    <div class="ai-page-header-actions">
+      <a href="{{ url_for('superadmin_ai.snapshot_json') }}" target="_blank" class="oa-btn oa-btn--ghost oa-btn--sm">🔍 Ver contexto que ve la IA</a>
+      <form method="POST" action="{{ url_for('superadmin_ai.nueva') }}" style="display:inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="oa-btn oa-btn--primary oa-btn--sm">＋ Nueva conversación</button>
+      </form>
+    </div>
+  </header>
+
+  <div class="ai-layout">
+    {# ─── Sidebar: lista de conversaciones ────────────────────── #}
+    <aside class="ai-sidebar" aria-label="Conversaciones">
+      <h2 class="ai-sidebar-title">Hilos</h2>
+      {% if conversaciones %}
+      <ul class="ai-conv-list">
+        {% for c in conversaciones %}
+        <li>
+          <a href="{{ url_for('superadmin_ai.index', conv=c.id) }}"
+             class="ai-conv-item {% if conv_actual and c.id == conv_actual.id %}is-active{% endif %}">
+            <span class="ai-conv-cat ai-conv-cat--{{ c.categoria }}">
+              {%- if c.categoria == 'finanzas' %}📊
+              {%- elif c.categoria == 'combos' %}🎁
+              {%- elif c.categoria == 'promociones' %}🎯
+              {%- elif c.categoria == 'cupones' %}🎟️
+              {%- elif c.categoria == 'campanas' %}📣
+              {%- else %}💬{% endif -%}
+            </span>
+            <span class="ai-conv-body">
+              <strong>{{ c.titulo }}</strong>
+              <small>{{ c.updated_at.strftime('%d/%m %H:%M') if c.updated_at else '' }}</small>
+            </span>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="ai-empty">Todavía no hay hilos. Creá uno con el botón de arriba o disparalo con una acción rápida.</p>
+      {% endif %}
+    </aside>
+
+    {# ─── Chat area ─────────────────────────────────────────── #}
+    <section class="ai-chat" aria-label="Chat con el asesor">
+      {% if conv_actual %}
+      <div class="ai-chat-header">
+        <div>
+          <h2 class="ai-chat-title">{{ conv_actual.titulo }}</h2>
+          <p class="ai-chat-meta">
+            <span class="ai-cat-badge ai-cat-badge--{{ conv_actual.categoria }}">
+              {{ {'finanzas': '📊 Finanzas', 'combos': '🎁 Combos', 'promociones': '🎯 Promociones', 'cupones': '🎟️ Cupones', 'campanas': '📣 Campañas', 'general': '💬 General'}.get(conv_actual.categoria, '💬 General') }}
+            </span>
+            <span>{{ mensajes|length }} mensajes</span>
+          </p>
+        </div>
+        <form method="POST" action="{{ url_for('superadmin_ai.archivar', conv_id=conv_actual.id) }}" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="oa-btn oa-btn--ghost oa-btn--sm" data-confirm="¿Archivar esta conversación?">🗄 Archivar</button>
+        </form>
+      </div>
+
+      {# Quick actions — chips que envían un prompt curado #}
+      <div class="ai-quick-actions" role="toolbar" aria-label="Acciones rápidas">
+        {% for key, qa in quick_actions.items() %}
+        <form method="POST" action="{{ url_for('superadmin_ai.enviar_mensaje', conv_id=conv_actual.id) }}" class="ai-quick-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="quick_action" value="{{ key }}">
+          <button type="submit" class="ai-quick-chip" title="{{ qa.descripcion }}">
+            <strong>{{ qa.titulo }}</strong>
+            <span>{{ qa.descripcion }}</span>
+          </button>
+        </form>
+        {% endfor %}
+      </div>
+
+      {# Mensajes #}
+      <div class="ai-messages" id="ai-messages">
+        {% if not mensajes %}
+        <div class="ai-empty ai-empty-center">
+          <p><strong>Hilo vacío.</strong></p>
+          <p>Elegí una acción rápida arriba o escribí tu pregunta abajo.</p>
+        </div>
+        {% endif %}
+        {% for m in mensajes %}
+        <article class="ai-msg ai-msg--{{ m.role }}">
+          <span class="ai-msg-role">
+            {% if m.role == 'user' %}Vos{% else %}Asesor{% if m.fuente == 'local' %} · local{% endif %}{% endif %}
+            <time>{{ m.created_at.strftime('%H:%M') if m.created_at else '' }}</time>
+          </span>
+          <div class="ai-msg-body">{{ m.contenido }}</div>
+        </article>
+        {% endfor %}
+      </div>
+
+      {# Composer #}
+      <form method="POST" action="{{ url_for('superadmin_ai.enviar_mensaje', conv_id=conv_actual.id) }}" class="ai-composer">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <textarea name="mensaje" required maxlength="1200" rows="2"
+                  placeholder="Preguntá al asesor (ej. '¿qué cupón puedo lanzar la próxima semana?')…"
+                  aria-label="Tu mensaje"></textarea>
+        <button type="submit" class="oa-btn oa-btn--primary">Enviar →</button>
+      </form>
+
+      {% else %}
+      <div class="ai-empty ai-empty-center">
+        <p>Elegí un hilo del panel lateral o creá uno nuevo para empezar a hablar con el asesor.</p>
+        <form method="POST" action="{{ url_for('superadmin_ai.nueva') }}" style="margin-top:1rem;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="oa-btn oa-btn--primary">＋ Crear el primer hilo</button>
+        </form>
+      </div>
+      {% endif %}
+    </section>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce() }}">
+// Auto-scroll al último mensaje y submit con Ctrl/Cmd+Enter
+(function(){
+  const msgs = document.getElementById('ai-messages');
+  if (msgs) msgs.scrollTop = msgs.scrollHeight;
+  const ta = document.querySelector('.ai-composer textarea');
+  if (ta) {
+    ta.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        ta.form.requestSubmit();
+      }
+    });
+    // Deshabilita el submit mientras espera respuesta
+    ta.form.addEventListener('submit', () => {
+      ta.form.querySelector('button[type="submit"]').disabled = true;
+    });
+  }
+  // Confirm en botones data-confirm
+  document.addEventListener('submit', (e) => {
+    const btn = e.submitter;
+    if (btn && btn.dataset.confirm && !confirm(btn.dataset.confirm)) e.preventDefault();
+  });
+})();
+</script>
+{% endblock %}

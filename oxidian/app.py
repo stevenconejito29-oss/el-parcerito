@@ -602,7 +602,7 @@ def create_app(env="default"):
         import time
         return {
             "asset_version": app.config.get("ASSET_VERSION", ""),
-            "ui_build": "2026-09-29-v12 · liquid-glass · franjas-mutex · superadmin-reparto-panel · sa-health-strip · combo-opcion-grid-fix · confirm-wa-race-guarded",
+            "ui_build": "2026-09-29-v13 · liquid-glass · sa-health-strip · combo-opcion-grid-fix · confirm-wa-race-guarded · ai-asesor-chat",
             "server_time": time.strftime("%Y-%m-%d %H:%M:%S %Z"),
             "note": "Si esta fecha es reciente pero la app se ve vieja, es cache del navegador. Purga y recarga.",
         }, 200
@@ -1160,6 +1160,7 @@ def create_app(env="default"):
     from routes.pos import pos_bp
     from routes.presencia import presencia_bp
     from routes.superadmin import superadmin_bp
+    from routes.superadmin_ai import superadmin_ai_bp
     from routes.api_bot import api_bot_bp
     from routes.uploads import uploads_bp
     from routes.marketing import marketing_bp
@@ -1183,6 +1184,7 @@ def create_app(env="default"):
     app.register_blueprint(pos_bp,         url_prefix="/pos")
     app.register_blueprint(presencia_bp,   url_prefix="/api")
     app.register_blueprint(superadmin_bp,  url_prefix="/superadmin")
+    app.register_blueprint(superadmin_ai_bp, url_prefix="/superadmin/ai")
     app.register_blueprint(api_bot_bp,     url_prefix="/api/bot")
     app.register_blueprint(uploads_bp)
     app.register_blueprint(marketing_bp,   url_prefix="/marketing")

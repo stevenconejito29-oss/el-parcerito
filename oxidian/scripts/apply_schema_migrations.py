@@ -48,6 +48,8 @@ from models import (
     FavorRequest,
     FavorOffer,
     FavorEvent,
+    AiAdvisorConversation,
+    AiAdvisorMessage,
 )
 
 
@@ -2339,6 +2341,11 @@ MIGRATIONS = [
     },
     {"id": "20260915_01_browser_notification_targeting", "description": "Vincular pedidos y conversaciones al dispositivo autorizado", "fn": _migrate_browser_notification_targeting},
     {"id": "20260924_01_categoria_emoji", "description": "Emoji/icono configurable por categoría (fallback genérico multi-tienda)", "fn": _migrate_categoria_emoji},
+    {
+        "id": "20260929_01_ai_advisor_conversations",
+        "description": "Chat interno del asesor IA comercial: hilo + mensajes con histórico persistente",
+        "tables": [AiAdvisorConversation.__table__, AiAdvisorMessage.__table__],
+    },
 ]
 
 

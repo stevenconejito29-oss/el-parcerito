@@ -5106,3 +5106,75 @@ class FavorEvent(db.Model):
         ),
         db.Index("ix_favor_event_request_created", "request_id", "created_at"),
     )
+
+
+# ─────────────────────────────────────────────────────────────────
+# ASISTENTE IA COMERCIAL (chat interno para super admin / admin)
+# ─────────────────────────────────────────────────────────────────
+
+class AiAdvisorConversation(db.Model):
+    """Hilo de conversación con el asesor IA comercial.
+
+    Portable: no depende de proveedor concreto — la config del modelo vive
+    en SiteConfig (COMMERCIAL_AI_*) y se puede clonar el negocio en otro
+    servidor manteniendo el histórico de conversaciones.
+    """
+    __tablename__ = "ai_advisor_conversations"
+
+    id = db.Column(db.Integer, primary_key=True)
+    owner_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    titulo = db.Column(db.String(160), nullable=False, default="Nueva conversación")
+    # Categoría de la conversación para filtrar por tema:
+    # general | finanzas | combos | promociones | cupones | campañas
+    categoria = db.Column(db.String(24), nullable=False, default="general", index=True)
+    archivada = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False, index=True)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    owner = db.relationship("User", foreign_keys=[owner_id])
+    mensajes = db.relationship(
+        "AiAdvisorMessage",
+        back_populates="conversacion",
+        lazy="dynamic",
+        cascade="all, delete-orphan",
+        order_by="AiAdvisorMessage.id",
+    )
+
+    __table_args__ = (
+        db.CheckConstraint(
+            "categoria IN ('general','finanzas','combos','promociones','cupones','campanas')",
+            name="ck_ai_advisor_categoria",
+        ),
+        db.Index("ix_ai_advisor_owner_updated", "owner_id", "updated_at"),
+    )
+
+
+class AiAdvisorMessage(db.Model):
+    """Mensaje individual dentro de una conversación con el asesor IA.
+
+    `role` mapea al esquema OpenAI/Anthropic estándar (user/assistant/system)
+    para poder reenviar el histórico al proveedor sin transformaciones.
+    `fuente` distingue entre respuesta del modelo externo y el fallback local.
+    """
+    __tablename__ = "ai_advisor_messages"
+
+    id = db.Column(db.Integer, primary_key=True)
+    conversacion_id = db.Column(
+        db.Integer, db.ForeignKey("ai_advisor_conversations.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    role = db.Column(db.String(16), nullable=False)   # user | assistant | system
+    contenido = db.Column(db.Text, nullable=False)
+    fuente = db.Column(db.String(24))                 # external | local | quick_action | null
+    tokens_estimados = db.Column(db.Integer)          # heurística len(text)/4
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False, index=True)
+
+    conversacion = db.relationship("AiAdvisorConversation", back_populates="mensajes")
+
+    __table_args__ = (
+        db.CheckConstraint("role IN ('user','assistant','system')", name="ck_ai_msg_role"),
+        db.Index("ix_ai_advisor_conv_created", "conversacion_id", "created_at"),
+    )
