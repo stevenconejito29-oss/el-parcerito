@@ -257,3 +257,102 @@ body.ox-body-admin .oa-toggle.oa-toggle--on {
     letter-spacing: .16em !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   COCINA + REPARTIDOR — soporte para AMBOS modos de reparto
+   Cada pedido puede pertenecer a una franja horaria o ser inmediato.
+   Badge franja visible + slot-strip responsive + priorización visual.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Badge de franja en cada pedido (view-preparador + view-repartidor) */
+body.ox-body-admin :is(.work-badge-zone, .prep-slot-badge) {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px !important;
+  border-radius: 999px !important;
+  font-size: .74rem !important;
+  font-weight: 900 !important;
+  letter-spacing: .02em;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--brand-primary, #FFAB00) 25%, var(--col-surface)),
+    color-mix(in srgb, var(--brand-primary, #FFAB00) 14%, var(--col-surface))) !important;
+  color: color-mix(in srgb, var(--brand-primary, #FFAB00) 88%, #000) !important;
+  border: 1.5px solid color-mix(in srgb, var(--brand-primary, #FFAB00) 42%, transparent) !important;
+  white-space: nowrap;
+  flex-shrink: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Slot strip (cabecera cocina con franjas del día) */
+body.view-preparador .prep-slot-strip {
+  scroll-padding-inline: 8px !important;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+body.view-preparador .prep-slot-card {
+  min-width: min(280px, 82vw) !important;
+  min-height: 92px !important;
+  transition: border-color .18s, transform .1s, box-shadow .15s;
+  cursor: pointer;
+}
+body.view-preparador .prep-slot-card:hover {
+  border-left-width: 6px !important;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--brand-primary) 20%, transparent);
+}
+body.view-preparador .prep-slot-card:active { transform: scale(.99); }
+body.view-preparador .prep-slot-card__time {
+  font-size: clamp(.9rem, .82rem + .4vw, 1.05rem) !important;
+}
+body.view-preparador .prep-slot-card__stats b {
+  min-width: 24px;
+  text-align: center;
+  font-weight: 900;
+}
+
+/* Repartidor - cards de franjas panel */
+body.view-repartidor :is(.rider-slot-card, .franja-card) {
+  padding: 12px 14px !important;
+  border-radius: 14px !important;
+  border: 1.5px solid var(--rc-line, #b8c5d0) !important;
+  background: var(--rc-card, #fff) !important;
+  margin-bottom: 10px;
+  min-height: 90px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color .18s, transform .1s;
+}
+body.view-repartidor :is(.rider-slot-card, .franja-card):hover {
+  border-color: var(--rc-blue, #075eb8) !important;
+}
+
+/* Botones de repartidor tomar/liberar franja */
+body.view-repartidor :is([data-take-slot], [data-release-slot],
+                        .rider-take-btn, .rider-release-btn) {
+  min-height: 46px !important;
+  padding: 8px 14px !important;
+  border-radius: 12px !important;
+  font-weight: 900 !important;
+  font-size: .88rem !important;
+  transition: transform .1s, filter .14s;
+}
+
+/* Móvil ≤430px — cards y badges compactos */
+@media (max-width: 430px) {
+  body.ox-body-admin :is(.work-badge-zone, .prep-slot-badge) {
+    font-size: .68rem !important;
+    padding: 3px 8px !important;
+  }
+  body.view-preparador .prep-slot-card {
+    min-width: min(240px, 88vw) !important;
+    padding: 10px !important;
+    min-height: 80px !important;
+  }
+  body.view-preparador .prep-slot-card__time { font-size: .88rem !important; }
+  body.view-preparador .prep-slot-card__stats { font-size: .66rem !important; gap: 4px !important; }
+  body.view-repartidor :is(.rider-slot-card, .franja-card) {
+    padding: 10px !important;
+    min-height: 82px;
+  }
+}
