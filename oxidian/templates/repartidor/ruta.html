@@ -133,6 +133,43 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
   }
 }
 
+/* ── Badges de estado por parada (audit 2026-09-29) ───────────── */
+.route-badge-active,
+.route-badge-next {
+  display: inline-block;
+  padding: .25rem .55rem;
+  border-radius: 7px;
+  font-weight: 900;
+  font-size: .7rem;
+  letter-spacing: .05em;
+  line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.route-badge-active {
+  background: color-mix(in srgb, #ef4444 15%, transparent);
+  color: #b02020;
+  border: 1px solid color-mix(in srgb, #ef4444 45%, transparent);
+  animation: route-badge-pulse 1.4s ease-in-out infinite;
+}
+.route-badge-next {
+  background: color-mix(in srgb, var(--brand-primary, #FFAB00) 18%, transparent);
+  color: color-mix(in srgb, var(--brand-primary, #FFAB00) 78%, #000);
+  border: 1px solid color-mix(in srgb, var(--brand-primary, #FFAB00) 50%, transparent);
+}
+@keyframes route-badge-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, #ef4444 40%, transparent); }
+  50% { opacity: .75; box-shadow: 0 0 0 4px color-mix(in srgb, #ef4444 8%, transparent); }
+}
+/* Card entera con acento cuando es la actual entregándose */
+.route-board .work-item:has(.route-badge-active) {
+  border-color: color-mix(in srgb, #ef4444 40%, var(--col-border, #e0e0e0)) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #ef4444 15%, transparent);
+}
+.route-board .work-item:has(.route-badge-next) {
+  border-color: color-mix(in srgb, var(--brand-primary, #FFAB00) 45%, var(--col-border, #e0e0e0)) !important;
+}
+
 /* Móvil pequeño: código legible en calle con guantes (nunca <1.5rem). */
 @media (max-width: 380px) {
   .route-board .work-code-input {
@@ -144,6 +181,8 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
   .route-board .flex.gap-2 > * { width: 100%; }
   .route-board .work-btn { min-height: 48px; }
   .route-board .work-address { word-break: break-word; overflow-wrap: anywhere; }
+  /* Badges reducidos pero legibles en 340px */
+  .route-badge-active, .route-badge-next { font-size: .65rem; padding: .2rem .4rem; }
   /* Alert cash (importe a cobrar) más visible en calle */
   .route-board .cash-alert,
   .route-board [data-cash-alert] {
@@ -656,6 +695,15 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
       <div class="work-order-head">
         <div class="flex items-center gap-2">
           <span class="work-order-code is-info">{{ pedido.numero_pedido }}</span>
+          {# Badge visual "EN ENTREGA" (pedido con en_camino_at ya marcado)
+             vs "PRÓXIMA" (el primer pedido de la lista que aún no salió).
+             Ayuda al rider a saber de un vistazo cuál está en curso y cuál
+             es el siguiente sin tener que memorizarlo. #}
+          {%- if pedido.en_camino_at -%}
+          <span class="route-badge-active" title="Entrega en curso">🔴 EN ENTREGA</span>
+          {%- elif loop.first -%}
+          <span class="route-badge-next" title="Próxima parada del rider">⭐ PRÓXIMA</span>
+          {%- endif -%}
           {%- if _cp2.has_items -%}
 	          {%- if _cp2.has_almacen -%}
 	          <span class="work-chip route-chip-almacen">📦 Almacén</span>

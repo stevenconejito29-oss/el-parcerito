@@ -602,7 +602,7 @@ def create_app(env="default"):
         import time
         return {
             "asset_version": app.config.get("ASSET_VERSION", ""),
-            "ui_build": "2026-09-29-v17 · ai-api-validation-ping · proxima-parada-notif · repartidor-cash-alert",
+            "ui_build": "2026-09-29-v18 · proxima-parada-notif · badges-en-entrega-proxima · cocina-grid-tablet",
             "server_time": time.strftime("%Y-%m-%d %H:%M:%S %Z"),
             "note": "Si esta fecha es reciente pero la app se ve vieja, es cache del navegador. Purga y recarga.",
         }, 200

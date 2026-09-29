@@ -356,3 +356,77 @@ body.view-repartidor :is([data-take-slot], [data-release-slot],
     min-height: 82px;
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   Fixes UX cocina + repartidor v2 (audit 2026-09-29)
+   Cierran gaps de responsive en <620px y aseguran wrap de sabores/
+   extras que se solapaban en cards estrechas.
+   ══════════════════════════════════════════════════════════════════ */
+
+/* 1. .work-item con min-width:0 en móvil — evita que extras/combo
+      largos rompan el grid del padre. */
+@media (max-width: 480px) {
+  body.view-preparador .work-item,
+  body.view-repartidor .work-item {
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+  body.view-preparador .work-item * {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* 2. Cards de pedido con padding reducido en <420px — recuperan
+      espacio útil sin sacrificar el borde. */
+@media (max-width: 420px) {
+  body.view-preparador .work-card,
+  body.view-preparador .work-item,
+  body.view-repartidor .work-card,
+  body.view-repartidor .work-item {
+    padding: .55rem !important;
+    gap: .45rem !important;
+  }
+  body.view-preparador .work-card > * + *,
+  body.view-repartidor .work-card > * + * {
+    margin-top: .35rem !important;
+  }
+}
+
+/* 3. Sabores / extras / choices — flex-wrap con gap para que nunca
+      se solapen en cards estrechas. */
+body.view-preparador :is(.work-sec-item, .work-item-choice, .work-item-fixed),
+body.view-repartidor :is(.work-sec-item, .work-item-choice, .work-item-fixed) {
+  flex-wrap: wrap !important;
+  gap: .3rem;
+  min-width: 0;
+}
+
+/* 4. Botones de acción SIEMPRE ≥44px en cocina y repartidor
+      (audit reportó .work-btn a 44px pero .work-btn-success en admin
+      solo a 44px cuando el estándar debería ser 48px operativos). */
+body.view-preparador .work-btn,
+body.view-preparador .work-btn-success,
+body.view-preparador .work-btn-primary,
+body.view-repartidor .work-btn,
+body.view-repartidor .work-btn-success,
+body.view-repartidor .work-btn-primary {
+  min-height: 48px !important;
+}
+
+/* 5. Grid pedidos cocina: 1 col <480, 2 col 480-899, 3 col 900-1279,
+      4 col ≥1280 — aprovecha tablet 10' apaisada sin colapsar. */
+@media (min-width: 900px) {
+  body.view-preparador .work-list,
+  body.view-preparador .prep-slot-orders {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .7rem;
+  }
+}
+@media (min-width: 1280px) {
+  body.view-preparador .work-list,
+  body.view-preparador .prep-slot-orders {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
