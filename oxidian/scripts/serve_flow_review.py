@@ -26,7 +26,7 @@ with app.app_context():
     ])
     from models import Product, ComboItem, ComboGroup, DeliverySlot, SlotRepartidor, Order
     from business_time import business_today
-    from datetime import time
+    from datetime import time, timedelta
     slot = DeliverySlot(fecha=business_today(),hora_inicio=time(0),hora_fin=time(23,59),capacidad_max=8,max_repartidores=1,activo=True)
     db.session.add(slot); db.session.flush()
     db.session.add(SlotRepartidor(slot_id=slot.id,repartidor_id=users['repartidor']))
@@ -76,6 +76,13 @@ with app.app_context():
             ComboItem(combo_id=detailed.id,producto_id=removed.id,cantidad=1,activo=False,es_seleccionable=False),
             ComboItem(combo_id=detailed.id,producto_id=drink.id,cantidad=1,combo_group_id=choices.id,grupo_seleccion=choices.nombre,max_selecciones=3,es_seleccionable=True,activo=True),
         ])
+        db.session.commit()
+    if os.environ.get('REVIEW_DELIVERY_SLOTS') == '1':
+        SiteConfig.set('delivery_franjas_activo', '1')
+        SiteConfig.set('delivery_inmediato_activo', '0')
+        db.session.add(DeliverySlot(fecha=business_today()+timedelta(days=1),
+                                   hora_inicio=time(18), hora_fin=time(20),
+                                   capacidad_max=8, max_repartidores=1, activo=True))
         db.session.commit()
 app.config.update(WTF_CSRF_ENABLED=True, SESSION_COOKIE_SECURE=False, BOT_API_KEY='qa-flow-only')
 

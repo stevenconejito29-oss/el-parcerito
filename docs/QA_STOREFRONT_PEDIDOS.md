@@ -250,3 +250,11 @@ combo → recogida → confirmación `si` → ticket desde chat; revisión visua
 endpoint VAPID valida las claves persistidas; Google Routes no está configurado
 (se usa la alternativa por cercanía). Backup previo verificado:
 `20260929-160246`, imagen de retorno `oxidian-release-rollback:3cf18ad`.
+
+La comprobación adicional de franjas conserva la selección al alternar reparto
+→ recogida → reparto; durante recogida el campo `slot_id` se vacía. Reproducir:
+
+```bash
+REVIEW_PORT=5079 REVIEW_RICH_CATALOG=1 REVIEW_DELIVERY_SLOTS=1 .venv/bin/python oxidian/scripts/serve_flow_review.py
+REVIEW_BASE_URL=http://127.0.0.1:5079 node oxidian/scripts/test_checkout_slots.mjs
+```

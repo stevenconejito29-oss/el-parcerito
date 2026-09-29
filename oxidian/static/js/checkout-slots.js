@@ -12,6 +12,7 @@
   const retry = document.getElementById('franjas-slot-retry');
   const choice = document.getElementById('delivery-plan-choice');
   let slots = [];
+  let lastSlotId = '';
   const delivery = () => document.querySelector('[name="tipo_entrega_cliente"]:checked')?.value === 'delivery';
   const wantsSlot = () => delivery() && (document.querySelector('[name="delivery_plan_ui"]:checked')?.value || (block.dataset.immediate === '1' ? 'inmediato' : 'franja')) === 'franja';
   function clearSelection() {
@@ -25,6 +26,11 @@
     block.hidden = !wantsSlot();
     day.required = wantsSlot();
     if (!wantsSlot()) clearSelection();
+    else if (!selected.value) {
+      const remembered = Array.from(list.querySelectorAll('input')).find(input => input.value === lastSlotId);
+      const input = remembered || list.querySelector('input');
+      if (input) { input.checked = true; input.dispatchEvent(new Event('change', {bubbles: true})); }
+    }
   }
   function renderTimes() {
     clearSelection();
@@ -41,6 +47,7 @@
         list.querySelectorAll('.df-slot-selected').forEach(el => el.classList.remove('df-slot-selected'));
         label.classList.add('df-slot-selected');
         selected.value = input.value;
+        lastSlotId = input.value;
         summary.textContent = `Franja elegida: ${DF.fmtFecha(slot.fecha)}, ${text.textContent}`;
         summary.hidden = false; error.hidden = true;
       });
