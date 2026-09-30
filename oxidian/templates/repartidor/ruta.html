@@ -297,6 +297,80 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
   /* Código NUNCA se reduce a menos de 48px — es la acción clave */
   .route-board .work-code-input { min-height: 52px; font-size: 1.4rem; }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   UI adaptativa por modo (2026-09-30 v22)
+   El rider ve solo la info relevante a su modo operativo — reduce
+   ruido y acelera la entrega.
+   ══════════════════════════════════════════════════════════════════ */
+
+/* Modo INMEDIATO: el pedido no tiene franja asignada.
+   - Ocultar cualquier badge/label de franja horaria.
+   - Priorizar el tiempo transcurrido (elapsed) porque el compromiso
+     es "sale en cuanto esté listo". */
+.route-board.mode-inmediato .work-badge-zone[data-slot],
+.route-board.mode-inmediato .work-slot-badge,
+.route-board.mode-inmediato .work-slot-label {
+  display: none !important;
+}
+.route-board.mode-inmediato .work-elapsed {
+  font-weight: 900 !important;
+  font-size: 1rem;
+}
+
+/* Modo FRANJAS: pedidos agrupados en tandas.
+   - Ocultar el "elapsed since creado_en" porque el compromiso es la
+     franja, no el tiempo desde que se hizo.
+   - Destacar el badge de franja.
+   - Mostrar la ruta agrupada por hora de salida (JS del panel franjas). */
+.route-board.mode-franjas .work-elapsed,
+.route-board.mode-franjas .work-time-stack .work-elapsed {
+  display: none !important;
+}
+.route-board.mode-franjas .work-badge-zone[title*="franja" i],
+.route-board.mode-franjas .work-slot-badge {
+  font-size: .9rem !important;
+  font-weight: 900 !important;
+  padding: .3rem .7rem !important;
+  background: color-mix(in srgb, var(--brand-primary) 22%, var(--col-surface)) !important;
+  color: color-mix(in srgb, var(--brand-primary) 82%, var(--col-text)) !important;
+  border: 1.5px solid color-mix(in srgb, var(--brand-primary) 45%, transparent) !important;
+}
+
+/* Modo MIXTO: el rider ve ambos tipos.
+   - Mantener el badge de franja SOLO en pedidos que tengan slot.
+   - Mostrar elapsed en pedidos sin slot; tiempo de franja en los que tienen slot. */
+.route-board.mode-mixto .work-item:not(:has(.work-slot-badge)) .work-slot-column {
+  display: none !important;
+}
+
+/* Densidad reducida: cuando el rider tiene 5+ pedidos, compactar cards
+   automáticamente para caber más entregas visibles sin scroll excesivo. */
+.route-board .work-list:has(> .work-item:nth-child(5)) .work-item {
+  padding: .55rem !important;
+  gap: .45rem !important;
+}
+.route-board .work-list:has(> .work-item:nth-child(5)) .work-item .work-order-code {
+  font-size: .82rem;
+}
+.route-board .work-list:has(> .work-item:nth-child(5)) .work-item .work-address {
+  font-size: .85rem;
+  line-height: 1.3;
+}
+
+/* Info secundaria pliegable: alergias, notas, breakdown se ocultan por
+   defecto en cards multi-pedido y se muestran al tocar "Ver más" o al
+   estar en modo entrega activa (una card en pantalla). */
+.route-board.has-active-route .work-item:not(.is-current-delivery) :is(
+  .work-item-allergies,
+  .work-item-notes-detail,
+  .work-item-breakdown
+) {
+  max-height: 40px;
+  overflow: hidden;
+  opacity: .7;
+  mask-image: linear-gradient(to bottom, #000 60%, transparent);
+}
 </style>
 {# El tema operativo se carga al final: es la única capa que decide color,
    contraste y composición del rider sobre los estilos compartidos. #}
@@ -305,7 +379,13 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
 <link rel="stylesheet" href="{{ url_for('static', filename='css/rider-console.css', v=asset_version) }}">
 {% endblock %}
 {% block content %}
-<div class="work-area route-board {% if en_ruta %}has-active-route{% else %}is-awaiting-pickup{% endif %}">
+{# Modo operativo activo: se usa para adaptar la UI y ocultar info irrelevante.
+   - mode-inmediato: rider ve pedidos sueltos sin franja, prioriza tiempo transcurrido
+   - mode-franjas: rider trabaja por tandas, prioriza hora de salida programada
+   - mode-mixto: ambos activos, rider ve badge + hora si el pedido tiene franja #}
+{% set _rmode = 'mixto' if (delivery_modes.inmediato and delivery_modes.franjas) else ('franjas' if delivery_modes.franjas else 'inmediato') %}
+<div class="work-area route-board mode-{{ _rmode }} {% if en_ruta %}has-active-route{% else %}is-awaiting-pickup{% endif %}"
+     data-delivery-mode="{{ _rmode }}">
 <section class="work-hero">
   <div>
     <span class="work-eyebrow">{{ delivery_operation.etiqueta }}</span>
