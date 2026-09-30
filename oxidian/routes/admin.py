@@ -662,16 +662,34 @@ def dashboard():
 @admin_bp.route("/cola")
 @admin_required
 def cola():
+    # Filtro opcional por zona (?zona=<id>|todas|sin) — permite al admin
+    # ver solo los pedidos de una zona concreta cuando la operación crece.
+    from models import ZonaEntrega
+    filtro_zona = (request.args.get("zona") or "").strip()
     cola_data = estado_cola()
-    pedidos_sin_asignar = Order.query.filter(
+    _base_sin_asignar = Order.query.filter(
         Order.estado.in_(["pendiente", "armando"]),
         Order.preparador_id == None
+    )
+    _base_sin_repartidor = pedidos_delivery_sin_repartidor_query()
+    if filtro_zona.isdigit():
+        zona_id = int(filtro_zona)
+        _base_sin_asignar = _base_sin_asignar.filter(Order.zona_id == zona_id)
+        _base_sin_repartidor = _base_sin_repartidor.filter(Order.zona_id == zona_id)
+    elif filtro_zona == "sin":
+        _base_sin_asignar = _base_sin_asignar.filter(Order.zona_id.is_(None))
+        _base_sin_repartidor = _base_sin_repartidor.filter(Order.zona_id.is_(None))
+    pedidos_sin_asignar = _base_sin_asignar.all()
+    pedidos_sin_repartidor = _base_sin_repartidor.all()
+    zonas_opciones = ZonaEntrega.query.filter_by(activo=True).order_by(
+        ZonaEntrega.orden, ZonaEntrega.nombre
     ).all()
-    pedidos_sin_repartidor = pedidos_delivery_sin_repartidor_query().all()
     return render_template("admin/cola.html",
                            cola=cola_data,
                            sin_asignar=pedidos_sin_asignar,
-                           sin_repartidor=pedidos_sin_repartidor)
+                           sin_repartidor=pedidos_sin_repartidor,
+                           zonas_opciones=zonas_opciones,
+                           filtro_zona=filtro_zona)
 
 
 @admin_bp.route("/cola/reasignar/<int:pedido_id>", methods=["POST"])
@@ -7558,6 +7576,121 @@ def asignar_repartidor_zona(zona_id):
     db.session.commit()
     flash(f"Repartidor {usuario.nombre}: {detalle}.", "success")
     return redirect(url_for("admin.zonas"))
+
+
+@admin_bp.route("/api/riders-zonas")
+@admin_required
+def riders_zonas_json():
+    """JSON con presencia por zona: riders activos, pedidos activos, ubicación
+    reciente. Alimenta dashboards y widgets sin renderear el template completo.
+
+    Formato de respuesta::
+
+        {
+          "generado_en": "2026-09-30T15:00:00Z",
+          "zonas": [
+            {"id": 1, "nombre": "Centro", "activo": true,
+             "riders": [{"id":5,"nombre":"Ana","activo":true,
+                         "lat":37.5,"lng":-5.7,"updated_at":"…"}],
+             "pedidos_activos": 3},
+            …
+          ],
+          "riders_sin_zona": [{…}]
+        }
+
+    Sin PII de clientes; solo staff.
+    """
+    from models import ZonaEntrega, RiderLocation, ESTADOS_ACTIVOS
+    from sqlalchemy import func as _f
+    from datetime import datetime as _dt
+
+    zonas = ZonaEntrega.query.order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
+    riders = User.query.filter_by(rol="repartidor").order_by(User.nombre).all()
+    locs = {l.repartidor_id: l for l in RiderLocation.query.all()}
+    pedidos_activos = dict(
+        db.session.query(Order.zona_id, _f.count(Order.id))
+        .filter(Order.estado.in_(ESTADOS_ACTIVOS))
+        .group_by(Order.zona_id).all()
+    )
+
+    def _rider_dict(u):
+        loc = locs.get(u.id)
+        return {
+            "id": u.id,
+            "nombre": u.nombre,
+            "activo": bool(u.activo),
+            "lat": float(loc.lat) if loc and loc.lat is not None else None,
+            "lng": float(loc.lng) if loc and loc.lng is not None else None,
+            "accuracy_m": float(loc.accuracy_m) if loc and loc.accuracy_m else None,
+            "updated_at": loc.updated_at.isoformat() + "Z" if loc and loc.updated_at else None,
+        }
+
+    riders_por_zona: dict[int | None, list[dict]] = {}
+    for r in riders:
+        riders_por_zona.setdefault(r.zona_repartidor_id, []).append(_rider_dict(r))
+
+    payload = {
+        "generado_en": _dt.utcnow().isoformat() + "Z",
+        "zonas": [
+            {
+                "id": z.id,
+                "nombre": z.nombre,
+                "activo": bool(z.activo),
+                "riders": riders_por_zona.get(z.id, []),
+                "pedidos_activos": int(pedidos_activos.get(z.id, 0)),
+            }
+            for z in zonas
+        ],
+        "riders_sin_zona": riders_por_zona.get(None, []),
+        "pedidos_sin_zona": int(pedidos_activos.get(None, 0)),
+    }
+    return jsonify(payload)
+
+
+@admin_bp.route("/cola/reasignar/<int:pedido_id>/sugerencias")
+@admin_required
+def sugerencias_rider_pedido(pedido_id):
+    """Devuelve JSON con riders sugeridos para reasignar un pedido, priorizando
+    los de la MISMA zona del pedido (mejor asignación operativa) y luego el
+    resto. Ordenados por carga actual (menos pedidos activos primero).
+    """
+    from models import ESTADOS_ACTIVOS
+    from sqlalchemy import func as _f
+    pedido = get_or_404(Order, pedido_id)
+    zona_id = pedido.zona_id
+    riders = User.query.filter_by(rol="repartidor", activo=True).all()
+    cargas = dict(
+        db.session.query(Order.repartidor_id, _f.count(Order.id))
+        .filter(Order.estado.in_(ESTADOS_ACTIVOS),
+                Order.repartidor_id.isnot(None))
+        .group_by(Order.repartidor_id).all()
+    )
+
+    def _dict(u, prioridad):
+        return {
+            "id": u.id, "nombre": u.nombre, "activo": bool(u.activo),
+            "zona_id": u.zona_repartidor_id,
+            "prioridad": prioridad,   # 'zona' | 'libre' | 'otra_zona'
+            "carga_actual": int(cargas.get(u.id, 0)),
+            "actual": u.id == pedido.repartidor_id,
+        }
+    grupos = {"zona": [], "libre": [], "otra_zona": []}
+    for u in riders:
+        if zona_id and u.zona_repartidor_id == zona_id:
+            grupos["zona"].append(_dict(u, "zona"))
+        elif u.zona_repartidor_id is None:
+            grupos["libre"].append(_dict(u, "libre"))
+        else:
+            grupos["otra_zona"].append(_dict(u, "otra_zona"))
+    for g in grupos.values():
+        g.sort(key=lambda r: r["carga_actual"])
+    return jsonify({
+        "ok": True,
+        "pedido_id": pedido.id,
+        "pedido_zona_id": zona_id,
+        "pedido_zona_nombre": (pedido.zona.nombre if pedido.zona else None),
+        "sugeridos": grupos["zona"] + grupos["libre"] + grupos["otra_zona"],
+    })
 
 
 # ═══════════════════════════════════════════════════════════════════════

@@ -2707,6 +2707,9 @@ def estado_cola() -> dict:
                 "minutos_inactivo": u.minutos_inactivo,
                 "carga_preparador": carga_prep.get(u.id, 0) if rol in _roles_prep else None,
                 "carga_repartidor": carga_rep.get(u.id, 0) if rol in _roles_rep else None,
+                # Zona asignada del repartidor — permite agrupar sugerencias en
+                # el <select> de reasignación por zona del pedido.
+                "zona_repartidor_id": getattr(u, "zona_repartidor_id", None),
             }
             for u in usuarios
         ]

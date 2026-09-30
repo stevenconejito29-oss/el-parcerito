@@ -16,6 +16,47 @@
   </div>
 </section>
 
+{% if zonas_opciones %}
+{# Filtro rápido por zona — reduce ruido cuando el volumen crece. Se
+   preserva vía queryparam ?zona=<id> y persiste en la URL. #}
+<nav class="cola-zone-filter" aria-label="Filtrar cola por zona"
+     style="display:flex;flex-wrap:wrap;gap:.35rem;margin:.6rem 0 1rem;">
+  {% set _active = filtro_zona %}
+  <a href="{{ url_for('admin.cola') }}"
+     class="cola-zone-chip {% if not _active %}is-active{% endif %}">Todas</a>
+  <a href="{{ url_for('admin.cola', zona='sin') }}"
+     class="cola-zone-chip {% if _active == 'sin' %}is-active{% endif %}">Sin zona</a>
+  {% for z in zonas_opciones %}
+  <a href="{{ url_for('admin.cola', zona=z.id) }}"
+     class="cola-zone-chip {% if _active == z.id|string %}is-active{% endif %}">
+    {{ z.nombre }}
+  </a>
+  {% endfor %}
+</nav>
+<style>
+.cola-zone-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: .35rem .75rem;
+  border-radius: 999px;
+  border: 1px solid var(--col-border, #e0e0e0);
+  background: var(--col-surface, #fff);
+  color: var(--col-text);
+  font-size: .78rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background .12s, border-color .12s;
+}
+.cola-zone-chip:hover { background: var(--col-elevated); }
+.cola-zone-chip.is-active {
+  background: color-mix(in srgb, var(--brand-primary, #FFAB00) 20%, var(--col-surface));
+  border-color: color-mix(in srgb, var(--brand-primary, #FFAB00) 55%, transparent);
+  color: color-mix(in srgb, var(--brand-primary, #FFAB00) 82%, var(--col-text));
+}
+</style>
+{% endif %}
+
 <div class="queue-kpis">
   <div class="queue-kpi {{ 'warn' if total_sin_asignar else '' }}">
     <span>Preparacion</span>
@@ -88,11 +129,45 @@
           <form method="POST" action="{{ url_for('admin.reasignar_pedido', pedido_id=pedido.id) }}" class="queue-assign">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="campo" value="repartidor_id">
-            <select name="user_id">
+            {# Sugerencia por zona: si el pedido tiene zona asignada, agrupamos
+               los riders — especialistas de esa zona primero, luego riders
+               comodines (sin zona), luego el resto. El admin ve la mejor
+               opción arriba sin tener que memorizar el mapa. #}
+            {% set _pz = pedido.zona_id %}
+            {% set _pzn = pedido.zona.nombre if pedido.zona else None %}
+            <select name="user_id" title="{% if _pzn %}Pedido en zona {{ _pzn }}{% endif %}">
               <option value="">Elegir repartidor</option>
-              {% for u in cola.get('repartidor', []) %}
-              <option value="{{ u.id }}">{{ '●' if u.conectado else '○' }} {{ u.nombre }}{% if u.carga_repartidor is not none %} · {{ u.carga_repartidor }}{% endif %}</option>
-              {% endfor %}
+              {% if _pz %}
+                {% set _all_riders = cola.get('repartidor', []) %}
+                {% set _zona_r = _all_riders|selectattr('zona_repartidor_id','equalto',_pz)|list %}
+                {% set _libre_r = _all_riders|selectattr('zona_repartidor_id','none')|list %}
+                {% set _otra_r = _all_riders|rejectattr('zona_repartidor_id','equalto',_pz)|rejectattr('zona_repartidor_id','none')|list %}
+                {% if _zona_r %}
+                <optgroup label="🎯 Zona {{ _pzn }}">
+                  {% for u in _zona_r %}
+                  <option value="{{ u.id }}">{{ '●' if u.conectado else '○' }} {{ u.nombre }}{% if u.carga_repartidor is not none %} · {{ u.carga_repartidor }}{% endif %}</option>
+                  {% endfor %}
+                </optgroup>
+                {% endif %}
+                {% if _libre_r %}
+                <optgroup label="Comodín (sin zona)">
+                  {% for u in _libre_r %}
+                  <option value="{{ u.id }}">{{ '●' if u.conectado else '○' }} {{ u.nombre }}{% if u.carga_repartidor is not none %} · {{ u.carga_repartidor }}{% endif %}</option>
+                  {% endfor %}
+                </optgroup>
+                {% endif %}
+                {% if _otra_r %}
+                <optgroup label="Otra zona">
+                  {% for u in _otra_r %}
+                  <option value="{{ u.id }}">{{ '●' if u.conectado else '○' }} {{ u.nombre }}{% if u.carga_repartidor is not none %} · {{ u.carga_repartidor }}{% endif %}</option>
+                  {% endfor %}
+                </optgroup>
+                {% endif %}
+              {% else %}
+                {% for u in cola.get('repartidor', []) %}
+                <option value="{{ u.id }}">{{ '●' if u.conectado else '○' }} {{ u.nombre }}{% if u.carga_repartidor is not none %} · {{ u.carga_repartidor }}{% endif %}</option>
+                {% endfor %}
+              {% endif %}
             </select>
             <button type="submit">Asignar</button>
           </form>
