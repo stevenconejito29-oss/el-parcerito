@@ -236,6 +236,29 @@ class User(UserMixin, db.Model):
             return None
         return int((utcnow() - self.last_seen).total_seconds() // 60)
 
+    @property
+    def pedidos_entregados_count(self) -> int:
+        """Cantidad de pedidos ENTREGADOS por este cliente.
+
+        Usado para (a) decidir si el cliente se salta el OTP de primer pedido
+        y (b) pintar el badge de riesgo en cocina/rider/admin. Cacheado por
+        request en `g._pedidos_entregados_cache` para no repetir el conteo
+        cuando el partial se renderiza múltiples veces en la misma vista.
+        """
+        from flask import g, has_request_context
+        cache_key = f"_pedidos_entregados_{self.id}"
+        if has_request_context():
+            cached = getattr(g, cache_key, None)
+            if cached is not None:
+                return cached
+        from sqlalchemy import func as _f
+        cnt = int(db.session.query(_f.count(Order.id)).filter(
+            Order.cliente_id == self.id, Order.estado == "entregado"
+        ).scalar() or 0)
+        if has_request_context():
+            setattr(g, cache_key, cnt)
+        return cnt
+
     # ── Puntos ──
     def sumar_puntos(self, cantidad, pedido_id=None, descripcion="Compra"):
         self.puntos += cantidad

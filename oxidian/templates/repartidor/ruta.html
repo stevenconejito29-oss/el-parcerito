@@ -789,6 +789,7 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
       <div class="work-order-head">
         <div class="flex items-center gap-2">
           <span class="work-order-code is-info">{{ pedido.numero_pedido }}</span>
+          {% include "partials/_risk_badge.html" %}
           {# Badge visual "EN ENTREGA" (pedido con en_camino_at ya marcado)
              vs "PRÓXIMA" (el primer pedido de la lista que aún no salió).
              Ayuda al rider a saber de un vistazo cuál está en curso y cuál

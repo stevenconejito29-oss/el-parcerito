@@ -1098,6 +1098,50 @@ input.checkout-radio {
   border-color: color-mix(in srgb, #FFAB00 40%, transparent);
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   Responsive final v27: garantiza que ningún bloque del checkout
+   desborde ni colapse mal en móviles de 320-400px.
+   ══════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 640px) {
+  /* Grid principal siempre 1 col en móvil: evita mal comportamiento
+     del md:col-span-3 de Tailwind en breakpoints raros. */
+  .checkout-layout { grid-template-columns: 1fr !important; }
+  .checkout-layout > * { grid-column: 1 !important; }
+}
+
+@media (max-width: 400px) {
+  /* Selector método de pago: 1 col forzado (evita compresión de labels) */
+  .checkout-pay-block .checkout-pay-options,
+  .checkout-payment-list {
+    grid-template-columns: 1fr !important;
+    gap: .5rem !important;
+  }
+  /* Sección fidelidad: selectores anidados a 1 col, texto legible */
+  .checkout-loyalty-row,
+  .checkout-loyalty-panel .checkout-reward-code-row {
+    grid-template-columns: 1fr !important;
+    gap: .5rem !important;
+  }
+  .checkout-loyalty-panel select,
+  .checkout-loyalty-panel input {
+    font-size: 15px !important;
+    min-height: 44px;
+  }
+  /* Hero del checkout: título más chico, subtítulo colapsable */
+  .checkout-head h1 { font-size: 1.05rem !important; line-height: 1.25; }
+  .checkout-eyebrow { font-size: .68rem !important; }
+  /* Botones de acción principal: min-height 48px + texto grande */
+  .checkout-btn,
+  #form-checkout button[type="submit"] {
+    min-height: 48px !important;
+    font-size: .95rem !important;
+    font-weight: 900;
+  }
+  /* Card resumen colapsable: padding reducido */
+  .checkout-summary-price { font-size: 1.05rem; }
+}
+
 /* Responsive fuerte ≤380px del bloque dirección */
 @media (max-width: 380px) {
   .addr-gps-btn { padding: .6rem .7rem !important; font-size: .82rem !important; min-height: 50px !important; }

@@ -872,6 +872,7 @@
       <div class="work-order-head">
         <div>
           <span class="work-order-code">{{ pedido.numero_pedido }}</span>
+          {% include "partials/_risk_badge.html" %}
           <span class="work-chip {% if pedido.origen == 'presencial' %}is-presencial{% elif pedido.origen == 'whatsapp' %}is-whatsapp{% else %}is-web{% endif %}">
             {% if pedido.origen == 'presencial' %}🖥 Tienda
             {% elif pedido.origen == 'whatsapp' %}📱 WhatsApp

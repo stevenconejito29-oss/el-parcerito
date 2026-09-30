@@ -129,6 +129,43 @@ form[data-once-submit][data-submit-done="1"] button[type="submit"]::after {
   }
 }
 
+/* ───────────────── RISK BADGE (nuevo/fiable/verificar) ────────── */
+.risk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: .68rem;
+  font-weight: 900;
+  line-height: 1.35;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.risk-badge--safe {
+  background: color-mix(in srgb, var(--theme-success, #17a760) 15%, var(--col-surface));
+  color: color-mix(in srgb, var(--theme-success, #17a760) 78%, var(--col-text));
+  border-color: color-mix(in srgb, var(--theme-success, #17a760) 40%, transparent);
+}
+.risk-badge--new {
+  background: color-mix(in srgb, #FFAB00 18%, var(--col-surface));
+  color: color-mix(in srgb, #FFAB00 82%, #000);
+  border-color: color-mix(in srgb, #FFAB00 45%, transparent);
+}
+.risk-badge--high {
+  background: color-mix(in srgb, var(--theme-danger, #b02020) 15%, var(--col-surface));
+  color: color-mix(in srgb, var(--theme-danger, #b02020) 82%, var(--col-text));
+  border-color: color-mix(in srgb, var(--theme-danger, #b02020) 45%, transparent);
+  animation: risk-badge-pulse 1.6s ease-in-out infinite;
+}
+@keyframes risk-badge-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--theme-danger, #b02020) 30%, transparent); }
+  50% { opacity: .78; box-shadow: 0 0 0 4px color-mix(in srgb, var(--theme-danger, #b02020) 5%, transparent); }
+}
+
 /* ───────────────── 8. reduce-motion aware ─────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   :where(a, button, input, select, textarea) { transition: none !important; }

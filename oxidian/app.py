@@ -602,7 +602,7 @@ def create_app(env="default"):
         import time
         return {
             "asset_version": app.config.get("ASSET_VERSION", ""),
-            "ui_build": "2026-09-30-v26 · pulido-final · tap44-focus-ring · empty-state-unificado",
+            "ui_build": "2026-09-30-v27 · otp-primer-pedido · risk-badge-inline · checkout-responsive-final",
             "server_time": time.strftime("%Y-%m-%d %H:%M:%S %Z"),
             "note": "Si esta fecha es reciente pero la app se ve vieja, es cache del navegador. Purga y recarga.",
         }, 200

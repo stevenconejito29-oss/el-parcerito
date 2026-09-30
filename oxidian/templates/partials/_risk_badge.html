@@ -1,0 +1,23 @@
+{# Badge de riesgo/confianza para operarios (cocina, rider, admin).
+   Uso:
+     {% include "partials/_risk_badge.html" with context %}
+     ← requiere `pedido` (Order) en el scope.
+
+   Estados:
+     🟢 is-safe → cliente con ≥3 pedidos entregados (confianza alta)
+     🟡 is-new  → primer pedido, OTP verificado (mostrar aviso al rider)
+     🔴 is-high → HIGH risk score (confirmacion_nivel) o cliente sin OTP
+                  y sin historial (raro post-guard; fallback defensivo)
+   Sin badge cuando cliente entre 1 y 2 pedidos entregados (normal).
+#}
+{% if pedido and pedido.cliente %}
+{% set _pe = pedido.cliente.pedidos_entregados_count %}
+{% set _lvl = (pedido.confirmacion_nivel or '').upper() %}
+{% if _lvl == 'HIGH' %}
+<span class="risk-badge risk-badge--high" title="Alto riesgo — cliente sin historial. Verificar antes de despachar.">🔴 Verificar</span>
+{% elif _pe == 0 %}
+<span class="risk-badge risk-badge--new" title="Primer pedido de este cliente.">🟡 Nuevo</span>
+{% elif _pe >= 3 %}
+<span class="risk-badge risk-badge--safe" title="Cliente con {{ _pe }} pedidos entregados.">🟢 Fiable</span>
+{% endif %}
+{% endif %}

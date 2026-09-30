@@ -294,6 +294,52 @@ def _cliente_tiene_identidad_verificada(cliente_id: int, pedido_id_actual: int |
     return db.session.query(q.exists()).scalar() is True
 
 
+FIRST_ORDER_OTP_TTL_DAYS = 30
+"""Cuántos días es válida una verificación OTP de primer pedido antes de
+volver a pedirla. 30 días balancea antifraude con no molestar a clientes
+que vuelven regularmente."""
+
+
+def esta_verificado_otp_primer_pedido(session_obj) -> bool:
+    """True si la sesión tiene una verificación OTP reciente (<30d)."""
+    ts = session_obj.get("first_order_otp_verified_at")
+    if not ts:
+        return False
+    try:
+        import time as _time
+        return (_time.time() - float(ts)) < FIRST_ORDER_OTP_TTL_DAYS * 86400
+    except (TypeError, ValueError):
+        return False
+
+
+def requiere_otp_primer_pedido(cliente, session_obj) -> bool:
+    """¿Necesitamos OTP antes de aceptar el checkout de este cliente?
+
+    Reglas (en orden):
+    1. Toggle OTP_FIRST_ORDER_REQUIRED debe estar activo. Default '1'.
+    2. Si la sesión ya tiene una verificación OTP reciente → False.
+    3. Si tienda es privada + cliente verificado por customer_access → False
+       (ya pasó el mismo OTP en el gate de la tienda).
+    4. Si el cliente tiene ≥1 pedido entregado → False (ya probó ser real).
+    5. En cualquier otro caso → True.
+    """
+    from models import SiteConfig as _SC
+    if str(_SC.get("OTP_FIRST_ORDER_REQUIRED", "1") or "1") != "1":
+        return False
+    if esta_verificado_otp_primer_pedido(session_obj):
+        return False
+    # Cliente verificado por customer_access ya pasó OTP equivalente.
+    try:
+        from customer_access import verified_customer as _vc
+        if _vc():
+            return False
+    except Exception:
+        pass
+    if cliente and getattr(cliente, "pedidos_entregados_count", 0) > 0:
+        return False
+    return True
+
+
 def evaluate_order_risk(pedido: Order) -> dict:
     """Puntúa el pedido para verificación pasiva antifraude.
 

@@ -17,8 +17,13 @@ customer_access_bp = Blueprint('customer_access', __name__)
 def enter():
     app_required = private_pwa_required()
     app_ready = bool(session.get('customer_pwa_ready'))
-    if not private_store_enabled() or (verified_customer() and
-            (not app_required or (app_ready and request.args.get('instalar') != '1'))):
+    # Modo "primer pedido": permite entrar al flow OTP incluso con tienda
+    # pública, cuando el checkout ha redirigido pidiendo verificación.
+    first_order_target = session.get('first_order_otp_pending')
+    if not private_store_enabled() and not first_order_target:
+        return redirect(url_for('public.index'))
+    if private_store_enabled() and verified_customer() and not first_order_target and (
+            not app_required or (app_ready and request.args.get('instalar') != '1')):
         return redirect(url_for('public.index'))
     if app_required and request.method == 'POST' and not app_ready:
         flash('Instala y abre la aplicación para verificar tu teléfono.', 'info')
@@ -67,6 +72,17 @@ def enter():
                     session.permanent = True
                     session.pop('customer_access_pending', None)
                     session.pop('customer_access_code_step', None)
+                    # Modo "primer pedido": marcar timestamp para el guard del
+                    # checkout y redirigir al carrito (target guardado antes).
+                    fo_target = session.pop('first_order_otp_pending', None)
+                    if fo_target:
+                        session['first_order_otp_verified_at'] = time.time()
+                        target_url = fo_target if isinstance(fo_target, str) else None
+                        # Solo aceptamos targets relativos internos para evitar
+                        # open-redirect. Cualquier URL absoluta se ignora.
+                        if target_url and target_url.startswith('/') and not target_url.startswith('//'):
+                            return redirect(target_url, code=303)
+                        return redirect(url_for('public.carrito'), code=303)
                     return redirect(url_for('public.index'), code=303)
                 db.session.commit()  # conservar límite de intentos del OTP
             flash('No se pudo verificar el código. Revisa el código o solicita uno nuevo.', 'danger')

@@ -3169,6 +3169,21 @@ def checkout():
             return redirect(url_for("public.checkout"))
         cliente = bloquear_cliente_puntos(cliente)
 
+        # ── Antifantasma: OTP obligatorio para primer pedido ──
+        # Regla del negocio: antes del PRIMER pedido entregado, el cliente
+        # debe verificar su WhatsApp con un OTP. Esto reutiliza el flujo de
+        # customer_access.enter() y funciona tanto en tienda pública como
+        # privada. Cliente con historial ≥1 entregado se salta la guarda.
+        from services import requiere_otp_primer_pedido
+        if requiere_otp_primer_pedido(cliente, session):
+            session["first_order_otp_pending"] = url_for("public.checkout")
+            flash(
+                "Antes de tu primer pedido necesitamos verificar tu WhatsApp. "
+                "Te llegará un código; ingrésalo para continuar.",
+                "info",
+            )
+            return redirect(url_for("customer_access.enter"))
+
         # ── Resolver zona ────────────────────────────────────────────────
         zona = None
         es_entrega_epicentro = True
