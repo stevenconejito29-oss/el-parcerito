@@ -160,6 +160,15 @@
           <span>💰 Envío: <strong style="color:var(--col-text);">€{{ "%.2f"|format(z.precio_envio) }}</strong></span>
           <span>⏱ <strong style="color:var(--col-text);">{{ z.tiempo_estimado_min }} min</strong></span>
           {% if z.gratis_desde %}<span style="color:var(--theme-success, var(--status-ok));">🎁 Gratis desde €{{ "%.2f"|format(z.gratis_desde) }}</span>{% endif %}
+          {# Contadores operativos: pedidos activos + riders asignados. #}
+          {% set _riders_z = riders_por_zona.get(z.id, []) %}
+          {% set _pedidos_z = pedidos_activos_por_zona.get(z.id, 0) %}
+          <span title="Pedidos actualmente en preparación o ruta con esta zona">
+            📦 <strong style="color:var(--col-text);">{{ _pedidos_z }}</strong> pedido{{ '' if _pedidos_z == 1 else 's' }} activo{{ '' if _pedidos_z == 1 else 's' }}
+          </span>
+          <span title="Riders con esta zona como especialidad">
+            🛵 <strong style="color:{{ 'var(--status-ok, #17a760)' if _riders_z else 'var(--theme-danger, #b02020)' }};">{{ _riders_z|length }}</strong> rider{{ '' if _riders_z|length == 1 else 's' }}
+          </span>
         </div>
       </div>
       <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
@@ -180,6 +189,52 @@
         </form>
       </div>
     </div>
+
+    {# ── Gestión de riders asignados a esta zona ── #}
+    <details class="sa-zona-riders" style="margin-top:.65rem;padding:.6rem .75rem;border:1px solid var(--col-border);border-radius:8px;background:color-mix(in srgb, var(--brand-primary) 3%, var(--col-surface));">
+      <summary style="cursor:pointer;font-weight:800;font-size:var(--oa-font-sm);color:var(--col-text);">
+        🛵 Riders especialistas ({{ _riders_z|length }})
+      </summary>
+      <div style="padding-top:.55rem;display:flex;flex-direction:column;gap:.4rem;">
+        {% if _riders_z %}
+          {% for r in _riders_z %}
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.4rem .5rem;background:var(--col-surface);border-radius:6px;font-size:var(--oa-font-xs);">
+            <span>
+              <strong>{{ r.nombre }}</strong>
+              <span style="color:var(--col-muted);">· {{ r.telefono or '—' }}</span>
+              {% if r.activo %}<span style="color:var(--status-ok, #17a760);font-weight:700;">● activo</span>{% else %}<span style="color:var(--col-muted);">○ inactivo</span>{% endif %}
+            </span>
+            <form method="POST" action="{{ url_for('superadmin.asignar_rider_zona', zona_id=z.id) }}" style="margin:0;">
+              {{ csrf_field() }}
+              <input type="hidden" name="user_id" value="{{ r.id }}">
+              <input type="hidden" name="accion" value="desasignar">
+              <button type="submit" class="oa-btn oa-btn--sm oa-btn--ghost" data-confirm="¿Quitar a {{ r.nombre|e }} de la zona {{ z.nombre|e }}?">Quitar</button>
+            </form>
+          </div>
+          {% endfor %}
+        {% else %}
+          <p style="margin:0;color:var(--col-muted);font-size:var(--oa-font-xs);">
+            Nadie asignado — los pedidos de esta zona los toma cualquier rider disponible (comodín).
+          </p>
+        {% endif %}
+
+        {% if riders_libres %}
+        <form method="POST" action="{{ url_for('superadmin.asignar_rider_zona', zona_id=z.id) }}"
+              style="display:flex;gap:.4rem;align-items:center;margin-top:.4rem;padding-top:.4rem;border-top:1px dashed var(--col-border);">
+          {{ csrf_field() }}
+          <input type="hidden" name="accion" value="asignar">
+          <label style="font-size:var(--oa-font-xs);color:var(--col-muted);flex-shrink:0;">➕ Asignar rider libre:</label>
+          <select name="user_id" required style="flex:1;min-height:36px;padding:.35rem .5rem;border:1px solid var(--col-border);border-radius:6px;background:var(--col-surface);color:var(--col-text);font-size:var(--oa-font-xs);">
+            <option value="">Elegí un rider…</option>
+            {% for r in riders_libres %}
+            <option value="{{ r.id }}">{{ r.nombre }}{% if not r.activo %} (inactivo){% endif %}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="oa-btn oa-btn--sm oa-btn--brand">Asignar</button>
+        </form>
+        {% endif %}
+      </div>
+    </details>
 
   </div>
   {% endfor %}

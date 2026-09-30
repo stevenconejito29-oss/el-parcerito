@@ -2555,12 +2555,68 @@ def zonas():
     # Health check inline: si algo está mal el operador lo ve al entrar sin
     # tener que abrir otra pestaña. Reutiliza el mismo motor de diagnóstico.
     diag = _diagnostico_zonas_payload()
+
+    # ── Enriquecer con riders asignados + pedidos activos por zona ──
+    # Permite al super_admin controlar "quién hace qué desde dónde" sin
+    # navegar a otra pantalla. Bulk queries: 2 en total, no N+1.
+    from models import ESTADOS_ACTIVOS
+    riders_por_zona: dict[int | None, list[User]] = {}
+    for r in User.query.filter_by(rol="repartidor", activo=True).order_by(User.nombre).all():
+        riders_por_zona.setdefault(r.zona_repartidor_id, []).append(r)
+    pedidos_activos_por_zona = dict(
+        db.session.query(Order.zona_id, func.count(Order.id))
+        .filter(Order.estado.in_(ESTADOS_ACTIVOS))
+        .group_by(Order.zona_id)
+        .all()
+    )
+    riders_libres = riders_por_zona.get(None, [])  # sin zona asignada
+
     return render_template(
         "superadmin/zonas.html", zonas=zonas,
         mapa_lat=mapa_lat, mapa_lng=mapa_lng,
         diag_checks=diag["checks"],
         diag_severidad=diag["resumen_severidad"],
+        riders_por_zona=riders_por_zona,
+        pedidos_activos_por_zona=pedidos_activos_por_zona,
+        riders_libres=riders_libres,
     )
+
+
+@superadmin_bp.route("/zonas/<int:zona_id>/asignar-rider", methods=["POST"])
+@superadmin_required
+def asignar_rider_zona(zona_id):
+    """Alias super_admin del asignador existente en admin.py.
+
+    Permite gestionar riders desde /superadmin/zonas sin abandonar el
+    contexto: el mismo super_admin que edita polígonos también asigna
+    especialistas.
+    """
+    _exigir_delivery_para_zonas()
+    zona = get_or_404(ZonaEntrega, zona_id)
+    user_id_raw = (request.form.get("user_id") or "").strip()
+    accion = (request.form.get("accion") or "asignar").strip()
+    if not user_id_raw.isdigit():
+        flash("Repartidor inválido.", "danger")
+        return redirect(url_for("superadmin.zonas"))
+    usuario = get_or_404(User, int(user_id_raw))
+    if usuario.rol != "repartidor":
+        flash("El usuario seleccionado no es repartidor.", "warning")
+        return redirect(url_for("superadmin.zonas"))
+    if accion == "desasignar":
+        usuario.zona_repartidor_id = None
+        detalle = f"desasignado de zona {zona.id}"
+    else:
+        usuario.zona_repartidor_id = zona.id
+        detalle = f"asignado a zona {zona.id} ({zona.nombre})"
+    AuditLog.registrar(current_user.id, "asignar_rider_zona", "user",
+                       usuario.id, detalle=detalle, ip=request.remote_addr)
+    try:
+        db.session.commit()
+        flash(f"{usuario.nombre}: {detalle}.", "success")
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"Error: {exc}", "danger")
+    return redirect(url_for("superadmin.zonas"))
 
 
 def _diagnostico_zonas_payload():
