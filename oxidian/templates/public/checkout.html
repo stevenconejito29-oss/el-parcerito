@@ -283,11 +283,23 @@
     <input type="text" name="direccion_detalles" id="direccion_detalles_input"
            maxlength="120" autocomplete="address-line2"
            placeholder="Ej: 1º bajo · 3ºA · portal B · timbre Pérez">
-    <p class="text-xs mt-1" style="color:var(--col-muted)">
-      💡 Elige tu calle de la lista. Si falta el número, escríbelo tú al final (ej: "Calle Andalucía 20").
+    <p class="text-xs mt-1" style="color:var(--col-muted);line-height:1.5">
+      💡 Elige tu calle de la lista. Si falta el número, escríbelo tú al final <span style="color:var(--col-faint)">(ej: "Calle Andalucía 20")</span>.
     </p>
-    <button type="button" class="checkout-location-btn" data-checkout-location>Usar mi ubicación GPS para comprobar cobertura</button>
-    <div id="dir-feedback" class="mt-2 text-xs hidden" style="min-height:1.2em"></div>
+    <button type="button" class="checkout-location-btn addr-gps-btn" data-checkout-location>
+      <span aria-hidden="true">📍</span> <span>Usar mi ubicación</span>
+      <small>Detectamos tu zona y precio de envío al momento</small>
+    </button>
+    {# Feedback visual de cobertura: card con icono grande, mensaje claro y
+       precio de envío inline cuando la dirección está cubierta. Sin este,
+       el cliente veía solo un texto chico gris. #}
+    <div id="dir-feedback" class="addr-feedback hidden" role="status" aria-live="polite">
+      <span class="addr-feedback__icon" aria-hidden="true">📍</span>
+      <div class="addr-feedback__body">
+        <strong class="addr-feedback__title">Comprobando cobertura…</strong>
+        <small class="addr-feedback__meta"></small>
+      </div>
+    </div>
     <style>
       .addr-suggest-list {
         position: absolute; top: 100%; left: 0; right: 0;
@@ -390,12 +402,20 @@
         // — mala UX (le hacíamos rellenar teléfono/pago para nada).
         validateSelectedAddress(li.dataset.label, li.dataset.lat, li.dataset.lng);
       }
-      async function validateSelectedAddress(direccion, lat, lng) {
+      function _fbSet(state, iconTxt, title, meta) {
         const fb = document.getElementById('dir-feedback');
         if (!fb) return;
-        fb.classList.remove('hidden');
-        fb.style.color = 'var(--col-muted)';
-        fb.textContent = 'Comprobando cobertura…';
+        fb.classList.remove('hidden', 'is-ok', 'is-err', 'is-loading', 'is-warn');
+        fb.classList.add(`is-${state}`);
+        const icon = fb.querySelector('.addr-feedback__icon');
+        const t = fb.querySelector('.addr-feedback__title');
+        const m = fb.querySelector('.addr-feedback__meta');
+        if (icon) icon.textContent = iconTxt;
+        if (t) t.textContent = title;
+        if (m) { m.textContent = meta || ''; m.style.display = meta ? '' : 'none'; }
+      }
+      async function validateSelectedAddress(direccion, lat, lng) {
+        _fbSet('loading', '⏳', 'Comprobando cobertura…', '');
         try {
           const resp = await fetch('/api/check-address', {
             method: 'POST',
@@ -405,16 +425,21 @@
           });
           const data = await resp.json().catch(() => ({}));
           if (data && data.ok) {
-            fb.style.color = 'var(--theme-success, #16a34a)';
-            const zonaLabel = (data.zona && data.zona.nombre) ? ` · ${data.zona.nombre}` : '';
-            fb.textContent = `✓ Dirección cubierta${zonaLabel}`;
+            const zonaNombre = (data.zona && data.zona.nombre) ? data.zona.nombre : 'zona cubierta';
+            const precio = data.zona && Number(data.zona.precio_envio);
+            const tiempo = data.zona && data.zona.tiempo_estimado_min;
+            const parts = [];
+            if (Number.isFinite(precio)) parts.push(precio > 0 ? `Envío €${precio.toFixed(2)}` : 'Envío gratis');
+            if (tiempo) parts.push(`~${tiempo} min`);
+            _fbSet('ok', '✅', `Dirección cubierta · ${zonaNombre}`, parts.join(' · '));
           } else {
-            fb.style.color = 'var(--theme-danger, #dc2626)';
-            fb.textContent = (data && data.mensaje) || 'Esa dirección está fuera de nuestra zona de entrega. Prueba otra o elige recogida.';
+            _fbSet('err', '⚠️',
+              'Fuera de zona de entrega',
+              (data && data.mensaje) || 'Prueba otra dirección cercana o elige recogida en el negocio.');
           }
         } catch (_) {
-          fb.style.color = 'var(--col-muted)';
-          fb.textContent = 'No pudimos comprobar la cobertura ahora. Continúa y validamos al confirmar.';
+          _fbSet('warn', 'ℹ️', 'No pudimos comprobar ahora',
+            'Continuá; volvemos a validar al confirmar.');
         }
       }
       async function fetchSuggest(q) {
@@ -969,6 +994,121 @@ input.checkout-radio {
     width: 100%;
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   Bloque dirección + cobertura v2 (2026-09-30)
+   Feedback prominente con icono + título + meta (precio, tiempo, km).
+   Botón GPS con subtítulo explicativo. Todo responsive ≤380px.
+   ══════════════════════════════════════════════════════════════════ */
+
+/* Botón "Usar mi ubicación" ampliado con subtítulo y icono grande */
+.addr-gps-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .35rem .6rem;
+  min-height: 54px !important;
+  padding: .7rem .85rem !important;
+  font-size: .88rem !important;
+  font-weight: 800 !important;
+  border-radius: .8rem !important;
+  border-width: 1.5px !important;
+  transition: background .15s, border-color .15s, transform .1s;
+  text-align: left;
+}
+.addr-gps-btn > span[aria-hidden] { font-size: 1.25rem; line-height: 1; }
+.addr-gps-btn > small {
+  flex: 1 1 100%;
+  display: block;
+  font-weight: 500;
+  font-size: .68rem;
+  color: color-mix(in srgb, currentColor 62%, transparent);
+  line-height: 1.35;
+  margin-left: calc(1.25rem + .6rem);
+  margin-top: -.15rem;
+}
+.addr-gps-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--action-primary, var(--brand-primary)) 15%, var(--col-surface));
+}
+.addr-gps-btn:active:not(:disabled) { transform: translateY(0); }
+
+/* Feedback estructurado — card visible con icono grande + jerarquía */
+.addr-feedback {
+  display: flex !important;
+  align-items: flex-start;
+  gap: .6rem;
+  margin-top: .7rem;
+  padding: .7rem .8rem;
+  border-radius: .75rem;
+  border: 1.5px solid var(--col-border, #e0e0e0);
+  background: var(--col-surface, #fff);
+  transition: background .2s, border-color .2s;
+}
+.addr-feedback.hidden { display: none !important; }
+.addr-feedback__icon {
+  font-size: 1.4rem;
+  line-height: 1;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+.addr-feedback__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.addr-feedback__title {
+  font-size: .88rem;
+  font-weight: 800;
+  color: var(--col-text);
+  line-height: 1.3;
+}
+.addr-feedback__meta {
+  font-size: .74rem;
+  color: var(--col-muted);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+/* Estados visuales — el color cuenta la historia al escanear rápido */
+.addr-feedback.is-ok {
+  background: color-mix(in srgb, var(--theme-success, #17a760) 10%, var(--col-surface));
+  border-color: color-mix(in srgb, var(--theme-success, #17a760) 45%, transparent);
+}
+.addr-feedback.is-ok .addr-feedback__title {
+  color: color-mix(in srgb, var(--theme-success, #17a760) 78%, var(--col-text));
+}
+.addr-feedback.is-err {
+  background: color-mix(in srgb, var(--theme-danger, #b02020) 8%, var(--col-surface));
+  border-color: color-mix(in srgb, var(--theme-danger, #b02020) 45%, transparent);
+}
+.addr-feedback.is-err .addr-feedback__title {
+  color: color-mix(in srgb, var(--theme-danger, #b02020) 78%, var(--col-text));
+}
+.addr-feedback.is-loading {
+  background: var(--col-elevated, #f4f4f4);
+  border-color: var(--col-border, #e0e0e0);
+}
+.addr-feedback.is-loading .addr-feedback__icon {
+  animation: addr-fb-spin 1.2s linear infinite;
+}
+@keyframes addr-fb-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.addr-feedback.is-warn {
+  background: color-mix(in srgb, #FFAB00 8%, var(--col-surface));
+  border-color: color-mix(in srgb, #FFAB00 40%, transparent);
+}
+
+/* Responsive fuerte ≤380px del bloque dirección */
+@media (max-width: 380px) {
+  .addr-gps-btn { padding: .6rem .7rem !important; font-size: .82rem !important; min-height: 50px !important; }
+  .addr-gps-btn > small { font-size: .65rem; margin-left: 1.6rem; }
+  .addr-feedback { padding: .55rem .65rem; gap: .5rem; }
+  .addr-feedback__icon { font-size: 1.2rem; }
+  .addr-feedback__title { font-size: .82rem; }
+  .addr-feedback__meta { font-size: .7rem; }
+  #direccion_input,
+  #direccion_detalles_input { font-size: 16px !important; /* iOS no-zoom */ }
+}
 </style>
 <script nonce="{{ csp_nonce() }}">
 const CHECKOUT_ROOT = document.querySelector('[data-subtotal-base]');
@@ -1018,19 +1158,33 @@ function setFulfillmentMode(mode) {
 async function useCheckoutLocation(button) {
   const feedback = document.getElementById('dir-feedback');
   const address = document.getElementById('direccion_input')?.value.trim() || '';
-  const show = (text, color) => {
+  // Actualiza el feedback estructurado (icon+title+meta) manteniendo el
+  // markup. `state`: loading | ok | err | warn. Fallback textContent si
+  // el markup nuevo aún no existe.
+  const show = (title, state, meta) => {
     if (!feedback) return;
-    feedback.textContent = text; feedback.style.color = color; feedback.classList.remove('hidden');
+    feedback.classList.remove('hidden', 'is-ok', 'is-err', 'is-loading', 'is-warn');
+    feedback.classList.add(`is-${state || 'warn'}`);
+    const iconEl = feedback.querySelector('.addr-feedback__icon');
+    const titleEl = feedback.querySelector('.addr-feedback__title');
+    const metaEl = feedback.querySelector('.addr-feedback__meta');
+    if (iconEl && titleEl) {
+      iconEl.textContent = state === 'ok' ? '✅' : state === 'err' ? '⚠️' : state === 'loading' ? '⏳' : 'ℹ️';
+      titleEl.textContent = title;
+      if (metaEl) { metaEl.textContent = meta || ''; metaEl.style.display = meta ? '' : 'none'; }
+    } else {
+      feedback.textContent = title + (meta ? ' — ' + meta : '');
+    }
   };
-  if (!navigator.geolocation) { show('Este navegador no ofrece ubicación.', 'var(--theme-danger)'); return; }
+  if (!navigator.geolocation) { show('Este navegador no ofrece ubicación', 'err', ''); return; }
   if (address.length < 6) {
-    show('Escribe primero la calle y el número; después comprobaremos que coincidan con tu ubicación.', 'var(--theme-danger)');
+    show('Escribí primero la calle', 'err', 'Después comprobamos que coincida con tu ubicación.');
     document.getElementById('direccion_input')?.focus();
     return;
   }
   clearCheckoutLocation();
   button.textContent = 'Comprobando ubicación…';
-  button.disabled = true; show('Solicitando ubicación…', 'var(--col-muted)');
+  button.disabled = true; show('Solicitando ubicación…', 'loading', '');
   navigator.geolocation.getCurrentPosition(async position => {
     try {
       const response = await checkoutJsonPost('/api/check-address', {
@@ -1044,7 +1198,7 @@ async function useCheckoutLocation(button) {
         if (typeof window._checkoutApplyAddressResult === 'function') {
           window._checkoutApplyAddressResult(data);
         } else {
-          show(data.mensaje || 'Ubicación fuera de cobertura.', 'var(--theme-danger)');
+          show('Ubicación fuera de cobertura', 'err', data.mensaje || 'Prueba otra dirección o elige recogida.');
         }
         button.textContent = 'Volver a comprobar ubicación';
         return;
@@ -1059,22 +1213,33 @@ async function useCheckoutLocation(button) {
         window._checkoutApplyAddressResult(data);
       } else {
         if (data.zona) _updateZonaSummary(Number(data.zona.precio_envio || 0), Number(data.zona.gratis_desde || 0), data.zona);
-        const distance = data.distancia_km == null ? '' : ` · ${data.distancia_km} km`;
-        show(`Dirección y ubicación dentro de cobertura${distance}.`, 'var(--theme-success)');
+        const zonaNombre = (data.zona && data.zona.nombre) ? data.zona.nombre : 'zona cubierta';
+        const precio = data.zona && Number(data.zona.precio_envio);
+        const tiempo = data.zona && data.zona.tiempo_estimado_min;
+        const distance = data.distancia_km == null ? '' : `${data.distancia_km} km`;
+        const parts = [];
+        if (Number.isFinite(precio)) parts.push(precio > 0 ? `Envío €${precio.toFixed(2)}` : 'Envío gratis');
+        if (tiempo) parts.push(`~${tiempo} min`);
+        if (distance) parts.push(distance);
+        show(`Ubicación verificada · ${zonaNombre}`, 'ok', parts.join(' · '));
       }
       button.textContent = 'Ubicación verificada';
     } catch (_) {
       clearCheckoutLocation();
       window._checkoutSetAddressUnknown?.();
       button.textContent = 'Volver a comprobar ubicación';
-      show('No pudimos comprobar la ubicación ahora.', 'var(--theme-danger)');
+      show('No pudimos comprobar la ubicación ahora', 'err', 'Reintentá en un momento.');
     }
     finally { button.disabled = false; }
   }, error => {
     clearCheckoutLocation();
     window._checkoutSetAddressUnknown?.();
     button.textContent = 'Volver a comprobar ubicación';
-    show(error.code === 1 ? 'Permiso de ubicación no concedido.' : 'No pudimos obtener tu ubicación.', 'var(--theme-danger)');
+    show(
+      error.code === 1 ? 'Permiso de ubicación no concedido' : 'No pudimos obtener tu ubicación',
+      'err',
+      error.code === 1 ? 'Otorgá permiso en el navegador para usar GPS.' : ''
+    );
     button.disabled = false;
   }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
 }
