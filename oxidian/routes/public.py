@@ -682,7 +682,15 @@ def _fulfillment_options(productos=None):
     features = get_store_features()
     allowed = set()
     if features.get("delivery", False):
-        allowed.add("delivery")
+        # Delivery solo se ofrece si AL MENOS UN modo operativo (inmediato o
+        # franjas) está activo. Si ambos están apagados, el radio "delivery"
+        # se ocultaría del checkout aunque FEATURE_DELIVERY siga en 1 —
+        # antes de este chequeo, el cliente podía seleccionar delivery y el
+        # POST fallaba con ErrorPlanDelivery críptico.
+        from delivery_mode_service import modos_delivery_activos
+        _modos = modos_delivery_activos()
+        if _modos["inmediato"] or _modos["franjas"]:
+            allowed.add("delivery")
     if features.get("recogida", False):
         allowed.add("recogida")
     for producto in (productos or []):
