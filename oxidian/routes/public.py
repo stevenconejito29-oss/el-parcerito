@@ -2966,19 +2966,29 @@ def checkout():
         if metodo_pago == "tarjeta" and SiteConfig.get("TARJETA_HABILITADA", "1") != "1":
             flash("El pago con tarjeta (datáfono) no está disponible ahora mismo. Elige otro método.", "danger")
             return redirect(url_for("public.checkout"))
-        # Defensa: si el cliente manda un método vacío o inválido, forzamos el
-        # primer habilitado como fallback en vez de bloquear el checkout.
-        if not metodo_pago:
-            for _mp, _flag in (
-                ("efectivo", SiteConfig.get("EFECTIVO_HABILITADO", "1") == "1"),
-                ("bizum", SiteConfig.get("BIZUM_HABILITADO", "1") == "1" and SiteConfig.get("BIZUM_TELEFONO", "")),
-                ("tarjeta", SiteConfig.get("TARJETA_HABILITADA", "1") == "1"),
-            ):
-                if _flag:
-                    metodo_pago = _mp
-                    break
-        if not metodo_pago:
+        # Recolectamos los métodos habilitados. Si sólo hay UNO habilitado y
+        # el cliente no eligió (form vacío) → asignamos ese único método
+        # silenciosamente (no hay decisión que tomar). Si hay 2+ opciones y
+        # el cliente no eligió, RECHAZAMOS el submit: el rider llegaría con
+        # el instrumento equivocado y sería una fricción real.
+        _habilitados = []
+        if SiteConfig.get("EFECTIVO_HABILITADO", "1") == "1":
+            _habilitados.append("efectivo")
+        if SiteConfig.get("BIZUM_HABILITADO", "1") == "1" and SiteConfig.get("BIZUM_TELEFONO", ""):
+            _habilitados.append("bizum")
+        if SiteConfig.get("TARJETA_HABILITADA", "1") == "1":
+            _habilitados.append("tarjeta")
+        if not _habilitados:
             flash("No hay métodos de pago disponibles ahora mismo. Contacta con la tienda.", "danger")
+            return redirect(url_for("public.checkout"))
+        if not metodo_pago:
+            if len(_habilitados) == 1:
+                metodo_pago = _habilitados[0]
+            else:
+                flash("Elige un método de pago antes de confirmar.", "danger")
+                return redirect(url_for("public.checkout"))
+        if metodo_pago not in _habilitados:
+            flash("El método de pago seleccionado no está disponible. Elige otro.", "danger")
             return redirect(url_for("public.checkout"))
         notas = request.form.get("notas", "").strip()[:1000]
         # Las notas de cada producto ya se conservan en OrderItem. No copiar
@@ -3271,13 +3281,17 @@ def checkout():
         puntos_ganados     = calcular_puntos_ganados(total)
         service_fee = get_service_commission(total)
 
-        # Registrar uso del cupón — envio_gratis aplica aunque descuento_cupon sea 0
+        # NOTA: cupon.registrar_uso() ANTES podía dejar el cupón consumido si el
+        # pedido fallaba más adelante (IVA, franja sin cupo, etc.). Ahora se
+        # ejecuta DESPUÉS de db.session.add(pedido) + flush() (más abajo), en la
+        # misma transacción. Aquí solo pre-validamos que aún está disponible.
         if cupon:
             try:
-                cupon.registrar_uso()
-            except ValueError:
-                flash("El cupón ya no está disponible. Inténtalo sin cupón.", "danger")
-                return redirect(url_for("public.checkout"))
+                cupon.validar_disponible()
+            except (ValueError, AttributeError):
+                # Compat: si el modelo no tiene validar_disponible(), asumimos
+                # que registrar_uso posterior detectará la carrera.
+                pass
 
         # Componemos la dirección final para persistir: calle+número + detalles.
         # La validación de zona ya pasó con solo la calle+número (Nominatim
@@ -3300,7 +3314,7 @@ def checkout():
             service_commission_amount=service_fee["amount"],
             merchant_net_amount=service_fee["merchant_net"],
             cupon_id=cupon.id if cupon else None,
-            puntos_usados=0,
+            puntos_usados=puntos_a_canjear,
             puntos_ganados=puntos_ganados,
             metodo_pago=metodo_pago,
             tipo_entrega_cliente=tipo_entrega_cliente,
@@ -3325,6 +3339,17 @@ def checkout():
         aplicar_snapshot_zona_pedido(pedido, zona, precio.costo_envio)
         db.session.add(pedido)
         db.session.flush()
+
+        # Registrar uso del cupón AHORA que el pedido existe. Si algo falla
+        # después (reserva de franja, IVA, geo), el rollback también deshace
+        # este registrar_uso — cero cupones huérfanos.
+        if cupon:
+            try:
+                cupon.registrar_uso()
+            except ValueError:
+                db.session.rollback()
+                flash("El cupón ya no está disponible. Inténtalo sin cupón.", "danger")
+                return redirect(url_for("public.checkout"))
 
         # ── Reserva de franja horaria (módulo delivery_franjas_activo) ──
         # Solo cuando el cliente eligió delivery + envió slot_id + módulo activo.

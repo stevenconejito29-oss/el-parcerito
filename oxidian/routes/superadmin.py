@@ -2852,6 +2852,22 @@ def toggle_zona(zona_id):
         if activas_restantes == 0:
             flash("Debe quedar al menos una zona activa para no romper el checkout.", "warning")
             return redirect(url_for("superadmin.zonas"))
+        # Guarda: si hay pedidos activos (aún no entregados ni cancelados)
+        # con esta zona asignada, desactivarla dejaría al rider viendo una
+        # zona "fantasma" y a la caja con cifras incoherentes. Bloquear.
+        from models import ESTADOS_ACTIVOS
+        pedidos_pendientes = Order.query.filter(
+            Order.zona_id == zona.id,
+            Order.estado.in_(ESTADOS_ACTIVOS),
+        ).count()
+        if pedidos_pendientes > 0:
+            flash(
+                f"No puedes desactivar '{zona.nombre}': hay {pedidos_pendientes} "
+                f"pedido(s) activo(s) usándola. Espera a que se entreguen o "
+                f"reasígnalos primero.",
+                "warning",
+            )
+            return redirect(url_for("superadmin.zonas"))
     zona.activo = not zona.activo
     try:
         db.session.commit()

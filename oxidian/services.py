@@ -2582,7 +2582,18 @@ def distribuir_repartidor(pedido: Order) -> User | None:
     # del pool como último recurso. Cada nivel también comprueba capacidad:
     # que exista un especialista no debe bloquear a un comodín libre cuando
     # el primero ya alcanzó su ruta máxima.
-    zona_pedido = getattr(pedido, "zona_id", None)
+    #
+    # NOTA franjas: si el pedido tiene slot_id con zona propia, esa zona
+    # tiene precedencia sobre pedido.zona_id — el rider que reparte una
+    # tanda de franja debe coincidir con la zona de la tanda, no con la
+    # zona de dirección del pedido (que podría diferir en solapes).
+    zona_pedido = None
+    slot = getattr(pedido, "slot", None)
+    slot_zona_id = getattr(slot, "zona_id", None) if slot else None
+    if slot_zona_id is not None:
+        zona_pedido = slot_zona_id
+    else:
+        zona_pedido = getattr(pedido, "zona_id", None)
     if zona_pedido is not None:
         de_zona = [u for u in candidatos
                    if getattr(u, "zona_repartidor_id", None) == zona_pedido]
