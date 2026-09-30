@@ -1,0 +1,139 @@
+/* ══════════════════════════════════════════════════════════════════
+   pulido-final.css — coherencia visual + a11y post-auditoría 2026-09-30
+   Se carga al FINAL de todos los CSS (mayor especificidad) para forzar
+   consistencia sin tocar cada regla base.
+
+   Cubre 6 áreas del audit:
+   1. Tap targets ≥44px en botones críticos
+   2. :focus-visible ring consistente en todo lo interactivo
+   3. Contraste WCAG en botones ámbar sobre fondo claro
+   4. Estado is-loading (spinner) para forms submit-once
+   5. Empty state unificado
+   6. Botón/link con transiciones suaves y feedback press
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ───────────────── 1. TAP TARGETS UNIFICADOS ─────────────────── */
+:where(button, input[type="submit"], input[type="button"], input[type="reset"],
+       a.oa-btn, a.work-btn, a.df-btn, a.checkout-btn, .ep-btn-detail,
+       .cat-action, .queue-assign button, .cola-zone-chip) {
+  min-height: 44px;
+  touch-action: manipulation;
+}
+/* Botones internos de tablas admin con densidad alta — reducidos pero legibles */
+.oa-table :is(button, a.oa-btn),
+.queue-assign > select {
+  min-height: 40px;
+}
+/* Botones diminutos oa-btn--xs siguen siendo válidos si están declarados */
+.oa-btn--xs { min-height: 32px; }
+
+/* ───────────────── 2. FOCUS RING CONSISTENTE ─────────────────── */
+:where(button, [role="button"], a, input, select, textarea, summary,
+       [tabindex]):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--brand-primary, #FFAB00) 60%, transparent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+/* En elementos que ya tienen border-radius alto, respetar la forma */
+:where(.oa-btn, .work-btn, .df-btn, .checkout-btn, button.pd-flavor-chip,
+       button.pd-added-toast__btn):focus-visible {
+  outline-offset: 3px;
+  border-radius: inherit;
+}
+
+/* ───────────────── 3. CONTRASTE BOTÓN PRIMARIO ────────────────── */
+/* En superficies claras, el ámbar puro puede bajar de WCAG AA. Sombras
+   internas y peso más alto compensan sin cambiar el tono de marca. */
+.oa-btn--primary,
+.work-btn-primary,
+.checkout-btn--primary,
+.ep-btn-detail {
+  font-weight: 900 !important;
+  text-shadow: 0 1px 0 color-mix(in srgb, currentColor 20%, transparent);
+}
+/* Botones ámbar sobre fondo oscuro: forzar texto negro/marrón oscuro */
+:where(.oa-btn--primary, .work-btn-primary, .checkout-btn--primary,
+       .ep-btn-detail) {
+  color: var(--brand-on-primary, #1B0A00) !important;
+}
+
+/* ───────────────── 4. SUBMIT-ONCE VISUAL FEEDBACK ─────────────── */
+button[aria-busy="true"],
+form[data-once-submit][data-submit-done="1"] button[type="submit"] {
+  position: relative;
+  color: transparent !important;
+  pointer-events: none;
+  opacity: .85;
+}
+button[aria-busy="true"]::after,
+form[data-once-submit][data-submit-done="1"] button[type="submit"]::after {
+  content: "";
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 18px; height: 18px;
+  margin: -9px 0 0 -9px;
+  border: 2.5px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: pf-spin .7s linear infinite;
+  color: var(--brand-on-primary, #1B0A00);
+}
+@keyframes pf-spin { to { transform: rotate(360deg); } }
+
+/* ───────────────── 5. EMPTY STATE UNIFICADO ───────────────────── */
+/* Cualquier vista puede envolver un mensaje "sin datos" en .empty-state
+   y hereda el mismo diseño en admin/cliente/rider/cocina. */
+.empty-state {
+  padding: 1.4rem 1rem;
+  text-align: center;
+  color: var(--col-muted, #6b6b6b);
+  background: var(--col-elevated, var(--col-surface, #fafafa));
+  border: 1.5px dashed var(--col-border, #e0e0e0);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .5rem;
+  line-height: 1.5;
+}
+.empty-state__icon { font-size: 2rem; line-height: 1; opacity: .6; }
+.empty-state__title {
+  font-size: .95rem;
+  font-weight: 800;
+  color: var(--col-text);
+  margin: 0;
+}
+.empty-state__hint { font-size: .8rem; color: var(--col-muted); margin: 0; max-width: 40ch; }
+.empty-state__action { margin-top: .35rem; }
+
+/* Reglas de compatibilidad: los estados vacíos legacy heredan lo mínimo */
+.work-empty, .ox-empty, .df-empty-action {
+  min-height: 60px;
+}
+
+/* ───────────────── 6. TRANSICIONES SUAVES ─────────────────────── */
+:where(a, button, input, select, textarea) {
+  transition: background-color .15s ease, border-color .15s ease,
+              color .15s ease, box-shadow .15s ease, transform .1s ease;
+}
+:where(a.oa-btn, button.oa-btn, a.work-btn, button.work-btn):active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* ───────────────── 7. RESPONSIVE microtouches ─────────────────── */
+@media (max-width: 480px) {
+  /* Chips (zonas, sabores, categorías) con más aire en móvil chico */
+  :where(.cola-zone-chip, .pd-flavor-chip, .df-slot-selectable) {
+    min-height: 42px;
+    padding-inline: .7rem;
+  }
+}
+
+/* ───────────────── 8. reduce-motion aware ─────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  :where(a, button, input, select, textarea) { transition: none !important; }
+  button[aria-busy="true"]::after,
+  form[data-once-submit][data-submit-done="1"] button[type="submit"]::after {
+    animation: none;
+  }
+}

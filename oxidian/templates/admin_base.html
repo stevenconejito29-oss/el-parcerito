@@ -168,6 +168,9 @@
   {# admin-mobile.css se carga DESPUÉS de todos los demás para mayor
      especificidad; contiene solo overrides para viewports ≤480px. #}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin-mobile.css', v=asset_version) }}">
+  {# pulido-final.css: coherencia visual + a11y, se carga al FINAL para
+     tener la mayor especificidad y unificar tap targets, focus, y feedback. #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/pulido-final.css', v=asset_version) }}">
   {% if request.endpoint == 'admin.finanzas' %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin-finance.css', v=asset_version) }}">
   {% endif %}
