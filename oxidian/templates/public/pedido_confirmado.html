@@ -64,13 +64,13 @@
     </p>
     <p class="order-number-help">{{ ui.order_number_help }}</p>
     <dl class="order-ticket-meta">
-      <div><dt>Fecha</dt><dd>{{ pedido.creado_en.strftime('%d/%m/%Y · %H:%M') if pedido.creado_en else 'Registrado' }}</dd></div>
-      <div><dt>Modalidad</dt><dd>{{ presentation.fulfillment_label }}</dd></div>
+      <div><dt><span class="order-meta-icon">📅</span>Fecha del pedido</dt><dd>{{ pedido.creado_en.strftime('%d/%m/%Y · %H:%M') if pedido.creado_en else 'Registrado' }}</dd></div>
+      <div><dt><span class="order-meta-icon">📦</span>Modalidad</dt><dd>{{ presentation.fulfillment_label }}</dd></div>
       {% if pedido.slot %}
-      <div><dt>Franja de reparto</dt><dd><strong>{{ pedido.slot.fecha.strftime('%A %d/%m') }} · {{ pedido.slot.hora_inicio.strftime('%H:%M') }}–{{ pedido.slot.hora_fin.strftime('%H:%M') }}</strong><small class="order-route-note">La llegada depende de la ruta y la distancia entre paradas. Te avisaremos cuando tu pedido salga a reparto.</small></dd></div>
+      <div><dt><span class="order-meta-icon">🕒</span>Franja de reparto</dt><dd><strong>{{ pedido.slot.fecha.strftime('%A %d/%m') }} · {{ pedido.slot.hora_inicio.strftime('%H:%M') }}–{{ pedido.slot.hora_fin.strftime('%H:%M') }}</strong><small class="order-route-note">La llegada depende de la ruta y la distancia entre paradas. Te avisaremos cuando tu pedido salga a reparto.</small></dd></div>
       {% endif %}
-      <div><dt>Pago</dt><dd data-order-payment-label>{{ presentation.payment_label }}</dd></div>
-      <div><dt>Estado actual</dt><dd data-order-status>{{ presentation.status_label }}</dd></div>
+      <div><dt><span class="order-meta-icon">💳</span>Forma de pago</dt><dd data-order-payment-label>{{ presentation.payment_label }}</dd></div>
+      <div><dt><span class="order-meta-icon">📍</span>Estado actual</dt><dd data-order-status>{{ presentation.status_label }}</dd></div>
     </dl>
   </div>
 
@@ -254,19 +254,31 @@
     </a>
     <a href="{{ url_for('public.chat') }}" class="order-action order-action--whatsapp">💬 Consultar en el chat</a>
     {% if puede_cancelar %}
-    {# Doble-tap con countdown 7s para prevenir cancelaciones accidentales.
-       El submit real solo se dispara si se confirma dentro de la ventana. #}
-    <form method="post" action="{{ url_for('public.cancelar_pedido_web', pedido_id=pedido.id) }}"
-          id="order-cancel-form" data-cancel-form>
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="button" class="order-action order-action--cancel" data-cancel-btn
-              data-label-idle="Cancelar pedido"
-              data-label-arm="Toca de nuevo para cancelar ({s}s)"
-              data-label-fire="Cancelando…">Cancelar pedido</button>
-      <p class="order-cancel-hint" data-cancel-hint hidden>
-        Estás a un toque de cancelar. Si no querés cancelar, esperá y este botón se restablece solo.
-      </p>
-    </form>
+    {# Cancelación oculta detrás de <details> para reducir cancelaciones
+       impulsivas por demora. Copy que redirige a la solución (chat) y solo
+       muestra el botón si el cliente se compromete a abrirlo. Combinado con
+       doble-tap+countdown+guarda de 5 min en backend. #}
+    <details class="order-help-details">
+      <summary>¿Necesitás ayuda con este pedido?</summary>
+      <div class="order-help-body">
+        <p>La forma más rápida es escribirnos por el chat — el equipo ve tu ticket y puede ajustar productos, cambiar una dirección o resolver dudas al instante.</p>
+        <a href="{{ url_for('public.chat') }}" class="order-action order-action--primary" style="margin-bottom:.6rem;">💬 Abrir chat con el equipo</a>
+        <p class="order-help-note">
+          Si insistís en cancelar dentro de los primeros 5 minutos, podés hacerlo abajo — pero perdés cupones, cafecitos y opciones aplicadas.
+        </p>
+        <form method="post" action="{{ url_for('public.cancelar_pedido_web', pedido_id=pedido.id) }}"
+              id="order-cancel-form" data-cancel-form>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="button" class="order-cancel-mini" data-cancel-btn
+                  data-label-idle="Cancelar el pedido"
+                  data-label-arm="Confirmá cancelación ({s}s)"
+                  data-label-fire="Cancelando…">Cancelar el pedido</button>
+          <p class="order-cancel-hint" data-cancel-hint hidden>
+            Estás a un toque de cancelar. Si es un error, esperá y el botón se desarma solo.
+          </p>
+        </form>
+      </div>
+    </details>
     {% elif pedido.estado not in ('entregado', 'cancelado') %}
     <p class="order-cancel-guidance">Este pedido ya está en operación. Para cambios o cancelación, abre el chat y solicita atención del equipo.</p>
     {% endif %}

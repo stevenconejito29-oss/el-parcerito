@@ -3204,15 +3204,17 @@ void document.getElementById('pd-add-form')?.addEventListener('submit', function
     const detailHtml = detail
       ? `<em style="display:block;font-size:.78rem;color:var(--brand-primary,#FFAB00);font-style:normal;font-weight:800;margin:.1rem 0 .2rem;">${detail.replace(/</g, '&lt;')}</em>`
       : '';
+    // Toast simple: confirma la adición y NO pregunta qué hacer después.
+    // Objetivo: el cliente sigue navegando el menú sin fricción; el link a
+    // la canasta queda discreto como acción secundaria.
     wrap.innerHTML = `
       <div class="pd-added-toast__body">
-        <strong>✅ ${name.replace(/</g, '&lt;')} añadido</strong>
+        <strong>✅ ${name.replace(/</g, '&lt;')} añadido al carrito</strong>
         ${detailHtml}
-        <p>Puedes añadir otra variación (otro sabor o tamaño) sin recargar.</p>
+        <p>Seguí agregando lo que quieras — tu carrito te espera cuando estés listo.</p>
       </div>
       <div class="pd-added-toast__actions">
-        <button type="button" class="pd-added-toast__btn pd-added-toast__btn--primary" data-action="another">Añadir otra</button>
-        <a class="pd-added-toast__btn pd-added-toast__btn--ghost" href="/carrito">Ver canasta</a>
+        <a class="pd-added-toast__btn pd-added-toast__btn--ghost" href="/carrito">🛒 Ver canasta</a>
         <button type="button" class="pd-added-toast__close" data-action="close" aria-label="Cerrar">×</button>
       </div>
     `;
@@ -3220,17 +3222,10 @@ void document.getElementById('pd-add-form')?.addEventListener('submit', function
     const dismiss = () => wrap.remove();
     wrap.addEventListener('click', (ev) => {
       const btn = ev.target.closest('[data-action]');
-      if (!btn) return;
-      if (btn.dataset.action === 'another') {
-        pdResetSteppers(form);
-        document.querySelector('input[name="presentation_size"]')?.scrollIntoView({behavior:'smooth', block:'center'});
-        dismiss();
-      } else if (btn.dataset.action === 'close') {
-        dismiss();
-      }
+      if (btn && btn.dataset.action === 'close') dismiss();
     });
-    // Auto-dismiss tras 8s si el usuario no interactúa.
-    setTimeout(dismiss, 8000);
+    // Auto-dismiss rápido (3.5s) — el toast es solo confirmación, no bloquea.
+    setTimeout(dismiss, 3500);
   }
 
   async function pdSubmitAjax(f) {
