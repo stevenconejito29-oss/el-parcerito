@@ -59,9 +59,24 @@ body.ox-keyboard-open :is(.wcp-head,.wcp-help,.wcp-orders,.wcp-reorder,.wcp-hand
 @media(orientation:landscape) and (max-height:560px) { body .wcp-page { grid-template-columns:150px minmax(0,1fr); grid-template-rows:minmax(0,1fr); } }
 
 /* ══════════════════════════════════════════════════════════════════
-   Widget visual de franjas en el chat web (v30)
-   Aparece cuando el intent es delivery_schedule y modo franjas ON.
+   Attachments INLINE del bot (v31+): franjas y cancel-offer viven
+   DENTRO del log de mensajes como una burbuja del bot con contenido
+   especial. Hereda el responsive de .wcp-message y usa el ancho útil.
    ══════════════════════════════════════════════════════════════════ */
+.wcp-message.wcp-attachment {
+  /* Ancho más amplio que mensaje normal — necesita espacio para chips */
+  max-width: min(94%, 560px);
+  padding: .55rem .65rem;
+  background: color-mix(in srgb, var(--brand-primary, #FFAB00) 6%, var(--theme-surface, #fff));
+  border: 1px solid color-mix(in srgb, var(--brand-primary, #FFAB00) 28%, var(--col-border));
+}
+.wcp-attachment-body {
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+  padding: 0;
+}
+/* Legado — todavía válido si queda referenciado en otro flujo */
 .wcp-franjas {
   display: flex;
   flex-direction: column;
@@ -260,3 +275,80 @@ body.ox-keyboard-open .wcp-franjas { display: none !important; }
 }
 
 body.ox-keyboard-open .wcp-cancel-offer { display: none !important; }
+
+/* ══════════════════════════════════════════════════════════════════
+   Franjas como attachment inline — chips clickables (<a>) con hover
+   y responsive heredado del log de mensajes.
+   ══════════════════════════════════════════════════════════════════ */
+.wcp-attachment.wcp-attachment-franjas .wcp-franja-slot {
+  cursor: pointer;
+  text-decoration: none;
+  transition: transform .1s, border-color .14s, background .14s;
+}
+.wcp-attachment.wcp-attachment-franjas a.wcp-franja-slot:hover {
+  border-color: color-mix(in srgb, var(--brand-primary, #FFAB00) 70%, transparent);
+  background: color-mix(in srgb, var(--brand-primary, #FFAB00) 10%, var(--theme-surface, #fff));
+  transform: translateY(-1px);
+}
+.wcp-attachment.wcp-attachment-franjas a.wcp-franja-slot:active {
+  transform: translateY(0);
+}
+.wcp-attachment.wcp-attachment-franjas span.wcp-franja-slot {
+  cursor: not-allowed;
+}
+
+/* Cancel offer inline: botón confirmar rojo + dismiss ghost */
+.wcp-cancel-attachment {
+  gap: .5rem;
+}
+.wcp-cancel-attachment .wcp-cancel-title {
+  margin: 0;
+  font-size: .9rem;
+  font-weight: 900;
+  color: color-mix(in srgb, var(--theme-danger, #b02020) 85%, var(--theme-text));
+}
+.wcp-cancel-attachment .wcp-cancel-body {
+  margin: 0;
+  font-size: .78rem;
+  line-height: 1.45;
+  color: var(--theme-text);
+}
+.wcp-cancel-attachment .wcp-cancel-actions {
+  display: flex;
+  gap: .4rem;
+  flex-wrap: wrap;
+}
+.wcp-cancel-attachment .wcp-cancel-confirm,
+.wcp-cancel-attachment .wcp-cancel-dismiss {
+  flex: 1 1 auto;
+  min-height: 44px;
+  padding: .55rem .8rem;
+  border-radius: 10px;
+  font-size: .82rem;
+  font-weight: 800;
+  cursor: pointer;
+  min-width: 0;
+}
+.wcp-cancel-attachment .wcp-cancel-confirm {
+  background: var(--theme-danger, #b02020);
+  border: 1.5px solid var(--theme-danger, #b02020);
+  color: #fff;
+}
+.wcp-cancel-attachment .wcp-cancel-confirm:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.wcp-cancel-attachment .wcp-cancel-confirm:disabled { opacity: .72; cursor: wait; }
+.wcp-cancel-attachment .wcp-cancel-dismiss {
+  background: transparent;
+  border: 1.5px solid var(--col-border);
+  color: var(--theme-text);
+}
+.wcp-cancel-attachment .wcp-cancel-dismiss:hover { background: var(--col-elevated); }
+
+/* Attachment en móviles chicos: ancho casi completo del log */
+@media (max-width: 480px) {
+  .wcp-message.wcp-attachment { max-width: 96%; padding: .5rem .55rem; }
+  .wcp-cancel-attachment .wcp-cancel-actions { flex-direction: column-reverse; }
+  .wcp-cancel-attachment .wcp-cancel-confirm,
+  .wcp-cancel-attachment .wcp-cancel-dismiss { width: 100%; }
+}

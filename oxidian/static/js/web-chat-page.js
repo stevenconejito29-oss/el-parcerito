@@ -9,8 +9,9 @@
   const handoff = document.getElementById('wcp-handoff');
   const orders = document.getElementById('wcp-orders');
   const reorder = document.getElementById('wcp-reorder');
-  const franjasEl = document.getElementById('wcp-franjas');
-  const cancelOfferEl = document.getElementById('wcp-cancel-offer');
+  // Franjas y cancel-offer ahora se inyectan INLINE en #wcp-messages.
+  // No hay containers fijos — se rematan como mensajes del bot con
+  // clases .wcp-attachment-{franjas|cancel} para poder re-pintarlos.
   const quick = [...document.querySelectorAll('[data-wcp-quick]')];
   if (!log || !form || !input) return;
   const csrf = document.querySelector('meta[name="ox-csrf-token"]')?.content || '';
@@ -62,19 +63,48 @@
     requests = task;
     return task;
   }
+  function _removeAttachment(klass) {
+    // Elimina un attachment previo del mismo tipo (franjas/cancel) para no
+    // duplicarlo cuando el polling vuelve a traer el mismo payload.
+    log?.querySelectorAll(`.wcp-attachment.${klass}`).forEach(el => el.remove());
+  }
+  function _attachmentShell(klass) {
+    // Mensaje tipo bot con un contenedor para el widget inline. Mantiene
+    // la estética del chat (burbuja a la izquierda) y hereda responsive
+    // del propio .wcp-messages.
+    const wrap = document.createElement('div');
+    wrap.className = `wcp-message is-bot wcp-attachment ${klass} motion-fade-in`;
+    const meta = document.createElement('div'); meta.className = 'wcp-message-meta';
+    const author = document.createElement('span'); author.textContent = 'Asistente';
+    meta.append(author);
+    const time = document.createElement('time');
+    const now = new Date();
+    time.dateTime = now.toISOString();
+    time.textContent = now.toLocaleTimeString('es', {hour:'2-digit', minute:'2-digit'});
+    meta.append(time);
+    wrap.append(meta);
+    const body = document.createElement('div'); body.className = 'wcp-message-body wcp-attachment-body';
+    wrap.append(body);
+    return {wrap, body};
+  }
+  function _appendAttachment(wrap) {
+    log?.append(wrap);
+    // Scroll al attachment nuevo si el usuario está cerca del final
+    const atBottom = log && (log.scrollHeight - log.scrollTop - log.clientHeight < 120);
+    if (atBottom) log.scrollTop = log.scrollHeight;
+  }
   function renderFranjas(dias = []) {
-    if (!franjasEl) return;
-    franjasEl.replaceChildren();
-    if (!dias.length) { franjasEl.hidden = true; return; }
-    franjasEl.hidden = false;
+    _removeAttachment('wcp-attachment-franjas');
+    if (!dias.length) return;
+    const {wrap, body} = _attachmentShell('wcp-attachment-franjas');
     const title = document.createElement('p');
     title.className = 'wcp-franjas-title';
     title.textContent = '📅 Franjas disponibles esta semana';
-    franjasEl.append(title);
+    body.append(title);
     const subtitle = document.createElement('small');
     subtitle.className = 'wcp-franjas-sub';
-    subtitle.textContent = 'La estrella marca la primera franja con cupo. Reservá en el carrito.';
-    franjasEl.append(subtitle);
+    subtitle.textContent = 'La estrella marca la próxima con cupo. Toca una para reservarla en el carrito.';
+    body.append(subtitle);
     dias.forEach(dia => {
       const dayBlock = document.createElement('div');
       dayBlock.className = 'wcp-franja-day';
@@ -87,78 +117,77 @@
       const slotRow = document.createElement('div');
       slotRow.className = 'wcp-franja-slots';
       (dia.slots || []).forEach(slot => {
-        const chip = document.createElement('span');
+        // Si está disponible → <a> interactivo al carrito con hint de slot;
+        // si está llena → <span> informativo sin acción.
+        const chip = document.createElement(slot.disponible ? 'a' : 'span');
         chip.className = 'wcp-franja-slot' +
           (slot.disponible ? '' : ' is-full') +
           (slot.sugerida ? ' is-suggested' : '');
+        if (slot.disponible) {
+          chip.href = `/carrito?slot_id=${slot.id}#franja`;
+          chip.setAttribute('aria-label',
+            `Reservar franja ${slot.hora_ini} a ${slot.hora_fin}, ${slot.cupo_libre} cupos libres`);
+          chip.rel = 'nofollow';
+        }
         const horas = document.createElement('b');
         horas.textContent = `${slot.hora_ini}–${slot.hora_fin}`;
         chip.append(horas);
         const estado = document.createElement('em');
-        if (!slot.disponible) {
-          estado.textContent = 'Completa';
-        } else if (slot.sugerida) {
-          estado.textContent = '⭐ Próxima';
-        } else {
-          estado.textContent = `${slot.cupo_libre} libres`;
-        }
+        if (!slot.disponible) estado.textContent = 'Completa';
+        else if (slot.sugerida) estado.textContent = '⭐ Próxima';
+        else estado.textContent = `${slot.cupo_libre} libres`;
         chip.append(estado);
         slotRow.append(chip);
       });
       dayBlock.append(slotRow);
-      franjasEl.append(dayBlock);
+      body.append(dayBlock);
     });
-  }
-  function hideCancelOffer() {
-    if (!cancelOfferEl) return;
-    cancelOfferEl.replaceChildren();
-    cancelOfferEl.hidden = true;
+    _appendAttachment(wrap);
   }
   function renderCancelOffer(offer) {
-    if (!cancelOfferEl || !offer) return;
-    cancelOfferEl.replaceChildren();
-    cancelOfferEl.hidden = false;
-    const card = document.createElement('div'); card.className = 'wcp-cancel-card';
+    _removeAttachment('wcp-attachment-cancel');
+    if (!offer) return;
+    const {wrap, body} = _attachmentShell('wcp-attachment-cancel');
+    body.classList.add('wcp-cancel-attachment');
     const title = document.createElement('p'); title.className = 'wcp-cancel-title';
     title.textContent = offer.order_id
-      ? `Cancelar pedido ${offer.number}`
+      ? `¿Cancelar pedido ${offer.number}?`
       : `No se puede cancelar ${offer.number}`;
-    card.append(title);
-    const body = document.createElement('p'); body.className = 'wcp-cancel-body';
-    body.textContent = offer.mensaje || '';
-    card.append(body);
+    body.append(title);
+    const txt = document.createElement('p'); txt.className = 'wcp-cancel-body';
+    txt.textContent = offer.mensaje || '';
+    body.append(txt);
     if (offer.order_id) {
+      const actions = document.createElement('div'); actions.className = 'wcp-cancel-actions';
+      const dismiss = document.createElement('button');
+      dismiss.type = 'button'; dismiss.className = 'wcp-cancel-dismiss';
+      dismiss.textContent = 'No, mantener';
+      dismiss.addEventListener('click', () => wrap.remove());
       const confirm = document.createElement('button');
       confirm.type = 'button'; confirm.className = 'wcp-cancel-confirm';
-      confirm.textContent = '⚠️ Sí, cancelar el pedido';
-      confirm.dataset.orderId = String(offer.order_id);
-      confirm.dataset.orderNumber = offer.number || '';
+      confirm.textContent = '⚠️ Sí, cancelar';
       confirm.addEventListener('click', () =>
         requireSecondTap(
           confirm,
-          `Toca otra vez para confirmar cancelación de ${offer.number}`,
+          `Toca otra vez para cancelar ${offer.number}`,
           async () => {
-            confirm.disabled = true;
+            confirm.disabled = true; dismiss.disabled = true;
             confirm.textContent = 'Cancelando…';
             try {
               render(await call(`/orders/${offer.order_id}/cancel`, {confirm: true}));
-              hideCancelOffer();
+              wrap.remove();
             } catch (error) {
               status.textContent = error.message || 'No se pudo cancelar.';
-              confirm.disabled = false;
-              confirm.textContent = '⚠️ Sí, cancelar el pedido';
+              confirm.disabled = false; dismiss.disabled = false;
+              confirm.textContent = '⚠️ Sí, cancelar';
             }
           }
         )
       );
-      card.append(confirm);
-      const dismiss = document.createElement('button');
-      dismiss.type = 'button'; dismiss.className = 'wcp-cancel-dismiss';
-      dismiss.textContent = 'No, mantener pedido';
-      card.append(dismiss);
-      dismiss.addEventListener('click', hideCancelOffer);
+      actions.append(dismiss, confirm);
+      body.append(actions);
     }
-    cancelOfferEl.append(card);
+    _appendAttachment(wrap);
   }
   function renderOrders(rows = []) {
     if (!orders) return;
@@ -244,7 +273,7 @@
     }
     if (data.orders) renderOrders(data.orders);
     if (data.franjas_preview) renderFranjas(data.franjas_preview);
-    if (data.cancel_offer) renderCancelOffer(data.cancel_offer); else hideCancelOffer();
+    if (data.cancel_offer) renderCancelOffer(data.cancel_offer);
     if (Object.prototype.hasOwnProperty.call(data, 'reorder')) renderReorder(data.reorder);
     const state = data.conversation?.status || 'bot';
     const recognised = data.conversation?.customer_recognised;
