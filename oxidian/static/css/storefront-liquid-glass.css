@@ -3053,3 +3053,87 @@ html body.ox-body-public .pd-combo-opt-sold {
     min-height: 42px;
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   Imágenes de producto más grandes (v33)
+   El usuario reportó que las fotos se ven chicas en el menú y las
+   listas. Agrandamos:
+   - Tarjetas de menú (.ep-card-img) con aspect-ratio 4/5 (vertical,
+     más alta) y min-height 180px desktop / 150px móvil
+   - Thumbnails en carrito/ticket a 56px (antes 40-50)
+   - Hero del producto detalle sin cambios (ya es grande)
+   Mantiene object-fit:cover para no deformar.
+   ══════════════════════════════════════════════════════════════════ */
+
+/* Menú — card con imagen vertical más impactante */
+html body.ox-body-public .ep-card-img {
+  aspect-ratio: 4/5 !important;        /* más alta que ancha → más protagonismo */
+  min-height: 180px !important;
+  background: color-mix(in srgb, var(--theme-surface-alt, var(--theme-surface)) 70%, transparent) !important;
+}
+html body.ox-body-public .ep-card-img img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  display: block !important;
+}
+html body.ox-body-public .ep-card-img-emoji {
+  font-size: 3.4rem !important;
+}
+
+/* PWA fullscreen: respeta el modo instalado pero con min-height más alto */
+html.ox-pwa-runtime body.ox-body-public .ep-grid .ep-card-img {
+  min-height: 170px !important;
+  aspect-ratio: 4/5 !important;
+}
+
+/* Tablet / desktop: imagen aún más grande */
+@media (min-width: 760px) {
+  html body.ox-body-public .ep-card-img {
+    min-height: 220px !important;
+    aspect-ratio: 1/1 !important;      /* en desktop vuelve a cuadrado para no estirar demasiado */
+  }
+  html body.ox-body-public .ep-card-img-emoji { font-size: 4rem !important; }
+}
+
+/* Móvil pequeño: no comprimir demasiado */
+@media (max-width: 400px) {
+  html body.ox-body-public .ep-card-img {
+    min-height: 150px !important;
+    aspect-ratio: 4/5 !important;
+  }
+}
+@media (max-width: 320px) {
+  html body.ox-body-public .ep-card-img {
+    min-height: 130px !important;
+  }
+}
+
+/* Carrito y ticket: thumbnails más grandes */
+html body.ox-body-public :is(.cr-item img, .cr-item-img,
+                            .cr-combo-row-img) {
+  width: 56px !important;
+  height: 56px !important;
+  min-width: 56px !important;
+  border-radius: .55rem !important;
+  object-fit: cover !important;
+}
+
+/* Ticket digital: thumb del item (w-10 h-10 Tailwind = 40px → 56px) */
+html body.ox-body-public .order-confirm-card :is(img.w-10, div.w-10) {
+  width: 56px !important;
+  height: 56px !important;
+  min-width: 56px !important;
+}
+
+/* Ticket digital: emojis en fallback también grandes */
+html body.ox-body-public .order-confirm-card div.w-10.text-xl {
+  font-size: 1.75rem !important;
+}
+
+/* Zoom hover sutil solo en desktop (en móvil tap no activa hover) */
+@media (hover: hover) and (pointer: fine) {
+  html body.ox-body-public .ep-card:hover .ep-card-img img {
+    transform: scale(1.04);
+  }
+}
