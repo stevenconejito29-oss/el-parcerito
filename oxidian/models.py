@@ -5206,3 +5206,56 @@ class AiAdvisorMessage(db.Model):
         db.CheckConstraint("role IN ('user','assistant','system')", name="ck_ai_msg_role"),
         db.Index("ix_ai_advisor_conv_created", "conversacion_id", "created_at"),
     )
+
+
+# ─────────────────────────────────────────────────────────────────
+# CORTE SEMANAL DE FINANZAS
+# ─────────────────────────────────────────────────────────────────
+
+class WeeklyClosure(db.Model):
+    """Snapshot congelado de la operación financiera de una semana ISO.
+
+    Append-only: cerrar la semana NO modifica Caja; sólo persiste los
+    agregados calculados para esa ventana. Editar filas de Caja posterior
+    al cierre NO altera estos valores — el admin ve claramente los
+    números con los que efectivamente cerró esa semana.
+
+    Rango: lunes 00:00 a domingo 23:59:59 (zona horaria del negocio).
+    Un cierre por semana (UNIQUE week_start, week_end).
+    """
+    __tablename__ = "weekly_closures"
+
+    id = db.Column(db.Integer, primary_key=True)
+    week_start = db.Column(db.Date, nullable=False, index=True)   # lunes
+    week_end   = db.Column(db.Date, nullable=False, index=True)   # domingo
+
+    # Ingresos: desglose por método de pago (del pedido asociado al mov Caja)
+    ingresos_total    = db.Column(db.Numeric(10, 2), nullable=False, default=0, server_default="0")
+    ingresos_efectivo = db.Column(db.Numeric(10, 2), nullable=False, default=0, server_default="0")
+    ingresos_bizum    = db.Column(db.Numeric(10, 2), nullable=False, default=0, server_default="0")
+    ingresos_tarjeta  = db.Column(db.Numeric(10, 2), nullable=False, default=0, server_default="0")
+
+    # Egresos: INVERSIÓN separada del resto para dar visibilidad al negocio.
+    # Inversión = categoría 'compra_insumos' (stock comprado para vender).
+    inversion_compras         = db.Column(db.Numeric(10, 2), nullable=False, default=0, server_default="0")
+    egresos_nominas           = db.Column(db.Numeric(10, 2), nullable=False, default=0, server_default="0")
+    egresos_liquidaciones     = db.Column(db.Numeric(10, 2), nullable=False, default=0, server_default="0")
+    egresos_gastos_operativos = db.Column(db.Numeric(10, 2), nullable=False, default=0, server_default="0")
+    egresos_devoluciones      = db.Column(db.Numeric(10, 2), nullable=False, default=0, server_default="0")
+    egresos_total             = db.Column(db.Numeric(10, 2), nullable=False, default=0, server_default="0")
+
+    saldo_neto         = db.Column(db.Numeric(10, 2), nullable=False, default=0, server_default="0")
+    # Ganancia operativa = saldo_neto − inversion_compras
+    # Separa el consumo de stock del resultado operativo real.
+    ganancia_operativa = db.Column(db.Numeric(10, 2), nullable=False, default=0, server_default="0")
+
+    cerrado_por = db.Column(db.Integer, db.ForeignKey("users.id"))
+    cerrado_en  = db.Column(db.DateTime, nullable=False, default=utcnow)
+    notas       = db.Column(db.Text)
+
+    autor = db.relationship("User", foreign_keys=[cerrado_por])
+
+    __table_args__ = (
+        db.UniqueConstraint("week_start", "week_end", name="uq_weekly_closure_range"),
+        db.CheckConstraint("week_end >= week_start", name="ck_weekly_closure_range"),
+    )

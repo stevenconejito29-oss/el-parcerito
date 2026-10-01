@@ -2766,6 +2766,87 @@ def estado_cola() -> dict:
 # CAJA — helpers
 # ─────────────────────────────────────────────
 
+def get_iso_week_bounds(fecha):
+    """Devuelve (lunes, domingo) de la semana ISO que contiene ``fecha``.
+    Zona horaria: `date` ya es naive, interpretado como fecha del negocio.
+    """
+    from datetime import date as _date
+    if not isinstance(fecha, _date):
+        raise TypeError("fecha debe ser date")
+    lunes = fecha - timedelta(days=fecha.weekday())
+    return lunes, lunes + timedelta(days=6)
+
+
+# Categorías mapeadas a buckets del cierre semanal. Si aparece una categoría
+# nueva en Caja, cae a "egresos_gastos_operativos" por defecto (safe).
+_BUCKET_EGRESO = {
+    "compra_insumos": "inversion_compras",
+    "salario": "egresos_nominas",
+    "comision_repartidor": "egresos_nominas",
+    "bonus": "egresos_nominas",
+    "pago_staff": "egresos_nominas",
+    "liquidacion_socio": "egresos_liquidaciones",
+    "liquidacion_bar": "egresos_liquidaciones",
+    "devolucion": "egresos_devoluciones",
+    "devolucion_proveedor": "egresos_devoluciones",
+    # Explícitas en "gastos operativos" — las que no listamos caen aquí.
+    "gasto_operativo": "egresos_gastos_operativos",
+    "alquiler": "egresos_gastos_operativos",
+    "servicios": "egresos_gastos_operativos",
+    "marketing": "egresos_gastos_operativos",
+    "mantenimiento": "egresos_gastos_operativos",
+    "impuestos": "egresos_gastos_operativos",
+}
+
+
+def calcular_agregados_semana(week_start, week_end) -> dict:
+    """Calcula agregados de Caja para la semana [week_start, week_end].
+
+    Función pura: NO persiste nada. Usada tanto por el preview de la semana
+    actual como por el cierre real.
+
+    Rango: incluye el día `week_end` completo (hasta 23:59:59.999).
+    """
+    from business_time import utc_naive_bounds
+    lower, upper = utc_naive_bounds(week_start, week_end)
+    movs = Caja.query.filter(Caja.fecha >= lower, Caja.fecha < upper).all()
+
+    buckets = {
+        "ingresos_total": Decimal("0"),
+        "ingresos_efectivo": Decimal("0"),
+        "ingresos_bizum": Decimal("0"),
+        "ingresos_tarjeta": Decimal("0"),
+        "inversion_compras": Decimal("0"),
+        "egresos_nominas": Decimal("0"),
+        "egresos_liquidaciones": Decimal("0"),
+        "egresos_gastos_operativos": Decimal("0"),
+        "egresos_devoluciones": Decimal("0"),
+        "egresos_total": Decimal("0"),
+    }
+    for mov in movs:
+        monto = Decimal(str(mov.monto or 0))
+        if mov.tipo == "ingreso":
+            buckets["ingresos_total"] += monto
+            metodo = (getattr(mov.pedido, "metodo_pago", None) if mov.pedido_id else None) or ""
+            metodo = metodo.strip().lower()
+            if metodo == "efectivo":
+                buckets["ingresos_efectivo"] += monto
+            elif metodo == "bizum":
+                buckets["ingresos_bizum"] += monto
+            elif metodo == "tarjeta":
+                buckets["ingresos_tarjeta"] += monto
+        elif mov.tipo == "egreso":
+            bucket = _BUCKET_EGRESO.get((mov.categoria or "").strip().lower(),
+                                        "egresos_gastos_operativos")
+            buckets[bucket] += monto
+            buckets["egresos_total"] += monto
+    buckets["saldo_neto"] = buckets["ingresos_total"] - buckets["egresos_total"]
+    buckets["ganancia_operativa"] = buckets["saldo_neto"] - buckets["inversion_compras"]
+    # Serializables para JSON / templates: devolvemos Decimal, el caller
+    # usa float() o quantize según necesidad.
+    return buckets
+
+
 def registrar_ingreso(monto, concepto, categoria="general",
                       pedido_id=None, registrado_por=None):
     entry = Caja(tipo="ingreso", categoria=categoria,

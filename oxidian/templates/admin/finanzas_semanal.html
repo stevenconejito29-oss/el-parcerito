@@ -1,0 +1,146 @@
+{% extends "admin_base.html" %}
+{% block title %}Corte semanal · Finanzas{% endblock %}
+
+{% block content %}
+<div class="oa-page">
+
+  <header class="oa-page-header">
+    <div class="oa-page-header__meta">
+      <p class="oa-page-header__eyebrow">Finanzas</p>
+      <h1 class="oa-page-header__title">Corte semanal</h1>
+      <p class="oa-page-header__subtitle">
+        Cada semana se congela un snapshot con ingresos, inversión en stock y
+        gastos operativos — el histórico no se altera al editar movimientos
+        posteriores.
+      </p>
+    </div>
+    <div class="oa-page-header__actions">
+      <a href="{{ url_for('admin.finanzas') }}" class="oa-btn oa-btn--ghost">← Finanzas diarias</a>
+    </div>
+  </header>
+
+  {# ── SEMANA ACTUAL (preview en vivo) ───────────────────────── #}
+  <section class="oa-panel" style="margin-bottom:1rem;">
+    <div class="oa-panel__header" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:.6rem;">
+      <div>
+        <p class="oa-panel__title">📅 Semana en curso</p>
+        <p class="oa-panel__hint">
+          {{ week_start.strftime('%d/%m/%Y') }} — {{ week_end.strftime('%d/%m/%Y') }}
+          {% if cierre_actual %}
+            · <span style="color:var(--theme-success,#17a760);font-weight:800">Ya cerrada el {{ cierre_actual.cerrado_en.strftime('%d/%m %H:%M') }}</span>
+          {% else %}
+            · <span style="color:var(--col-muted)">Agregados en vivo (sin cerrar)</span>
+          {% endif %}
+        </p>
+      </div>
+      {% if not cierre_actual %}
+      <form method="POST" action="{{ url_for('admin.cerrar_semana') }}" style="margin:0;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="fecha_referencia" value="{{ week_end.isoformat() }}">
+        <button type="submit" class="oa-btn oa-btn--primary"
+                data-confirm="¿Cerrar la semana {{ week_start.strftime('%d/%m') }}–{{ week_end.strftime('%d/%m') }}? Esto crea un snapshot inmutable; movimientos posteriores no se incluirán.">
+          🔒 Cerrar esta semana
+        </button>
+      </form>
+      {% endif %}
+    </div>
+
+    <div class="oa-panel__body">
+      <div class="oa-kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));">
+        <div class="oa-kpi oa-kpi--ok">
+          <p class="oa-kpi__label">💰 Ingresos</p>
+          <p class="oa-kpi__value">€{{ "%.2f"|format(actual.ingresos_total|float) }}</p>
+          <p class="oa-kpi__delta oa-kpi__delta--up">
+            Efectivo €{{ "%.0f"|format(actual.ingresos_efectivo|float) }} ·
+            Bizum €{{ "%.0f"|format(actual.ingresos_bizum|float) }} ·
+            Tarjeta €{{ "%.0f"|format(actual.ingresos_tarjeta|float) }}
+          </p>
+        </div>
+        <div class="oa-kpi oa-kpi--warn">
+          <p class="oa-kpi__label">📦 Inversión (stock)</p>
+          <p class="oa-kpi__value">€{{ "%.2f"|format(actual.inversion_compras|float) }}</p>
+          <p class="oa-kpi__delta">Compra de insumos esta semana</p>
+        </div>
+        <div class="oa-kpi">
+          <p class="oa-kpi__label">💸 Gastos operativos</p>
+          <p class="oa-kpi__value">€{{ "%.2f"|format((actual.egresos_nominas + actual.egresos_gastos_operativos + actual.egresos_liquidaciones + actual.egresos_devoluciones)|float) }}</p>
+          <p class="oa-kpi__delta">Nóminas + gastos + liquidaciones + devoluciones</p>
+        </div>
+        <div class="oa-kpi {% if actual.ganancia_operativa|float < 0 %}oa-kpi--warn{% else %}oa-kpi--ok{% endif %}">
+          <p class="oa-kpi__label">📈 Ganancia operativa</p>
+          <p class="oa-kpi__value">€{{ "%.2f"|format(actual.ganancia_operativa|float) }}</p>
+          <p class="oa-kpi__delta">Saldo − inversión en stock</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {# ── HISTÓRICO DE CIERRES ─────────────────────────────────── #}
+  <section class="oa-panel">
+    <div class="oa-panel__header">
+      <p class="oa-panel__title">📜 Cierres anteriores</p>
+      <p class="oa-panel__hint">Últimos 26 cierres (6 meses). Click "Ver día a día" para desglose.</p>
+    </div>
+    <div class="oa-panel__body" style="overflow-x:auto;">
+      {% if historico %}
+      <table class="oa-table" style="width:100%;border-collapse:collapse;font-size:.85rem;">
+        <thead>
+          <tr style="border-bottom:2px solid var(--col-border);">
+            <th style="text-align:left;padding:.5rem .45rem;">Semana</th>
+            <th style="text-align:right;padding:.5rem .45rem;">Ingresos</th>
+            <th style="text-align:right;padding:.5rem .45rem;">Inversión</th>
+            <th style="text-align:right;padding:.5rem .45rem;">Gastos op.</th>
+            <th style="text-align:right;padding:.5rem .45rem;">Saldo</th>
+            <th style="text-align:right;padding:.5rem .45rem;color:var(--brand-primary);">Ganancia op.</th>
+            <th style="text-align:left;padding:.5rem .45rem;color:var(--col-muted);">Cerrado por</th>
+            <th style="padding:.5rem .45rem;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in historico %}
+          {% set _gastos_op = (c.egresos_nominas + c.egresos_gastos_operativos + c.egresos_liquidaciones + c.egresos_devoluciones)|float %}
+          <tr style="border-bottom:1px solid var(--col-border);">
+            <td style="padding:.55rem .45rem;font-weight:700;">
+              {{ c.week_start.strftime('%d/%m') }} – {{ c.week_end.strftime('%d/%m/%Y') }}
+            </td>
+            <td style="text-align:right;padding:.55rem .45rem;color:var(--theme-success,#17a760);">
+              €{{ "%.2f"|format(c.ingresos_total|float) }}
+            </td>
+            <td style="text-align:right;padding:.55rem .45rem;color:#B06000;">
+              €{{ "%.2f"|format(c.inversion_compras|float) }}
+            </td>
+            <td style="text-align:right;padding:.55rem .45rem;color:var(--theme-danger,#b02020);">
+              €{{ "%.2f"|format(_gastos_op) }}
+            </td>
+            <td style="text-align:right;padding:.55rem .45rem;">
+              €{{ "%.2f"|format(c.saldo_neto|float) }}
+            </td>
+            <td style="text-align:right;padding:.55rem .45rem;font-weight:900;color:{{ 'var(--theme-success)' if c.ganancia_operativa|float >= 0 else 'var(--theme-danger)' }};">
+              €{{ "%.2f"|format(c.ganancia_operativa|float) }}
+            </td>
+            <td style="padding:.55rem .45rem;color:var(--col-muted);font-size:.72rem;">
+              {{ c.autor.nombre if c.autor else '—' }}<br>
+              <small>{{ c.cerrado_en.strftime('%d/%m %H:%M') }}</small>
+            </td>
+            <td style="padding:.55rem .45rem;">
+              <a href="{{ url_for('admin.caja', fecha_ini=c.week_start.isoformat(), fecha_fin=c.week_end.isoformat()) }}"
+                 class="oa-btn oa-btn--xs oa-btn--ghost">Ver día a día →</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">
+        <span class="empty-state__icon">📊</span>
+        <p class="empty-state__title">Todavía no cerraste ninguna semana</p>
+        <p class="empty-state__hint">
+          Cuando cierres la primera, el histórico aparecerá acá y podrás comparar inversión, ganancias y gastos entre semanas.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+</div>
+{% endblock %}

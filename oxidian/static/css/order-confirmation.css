@@ -56,7 +56,7 @@
 .order-progress .is-current > b { background: var(--brand-primary); color: var(--action-on-primary); box-shadow: 0 0 0 4px color-mix(in srgb,var(--brand-primary) 17%,transparent); animation: order-current 1.8s ease-in-out infinite; }
 @keyframes order-current { 50%{box-shadow:0 0 0 7px color-mix(in srgb,var(--brand-primary) 8%,transparent)} }
 .order-number-label { margin: 0 0 .25rem; color: var(--theme-muted); font-size: .66rem; font-weight: 950; letter-spacing: .12em; text-transform: uppercase; }
-.order-number-value { margin: 0; overflow-wrap: anywhere; color: color-mix(in srgb,var(--brand-primary) 72%,var(--theme-text)); font-family: ui-monospace,SFMono-Regular,Menlo,monospace; font-size: clamp(1.8rem,9vw,2.65rem); font-weight: 950; letter-spacing: -.045em; }
+.order-number-value { margin: 0; overflow-wrap: anywhere; word-break: break-word; color: color-mix(in srgb,var(--brand-primary) 72%,var(--theme-text)); font-family: ui-monospace,SFMono-Regular,Menlo,monospace; font-size: clamp(1.2rem, 5vw + .3rem, 2.65rem); font-weight: 950; letter-spacing: -.045em; max-width: 100%; }
 .order-number-help { margin: .2rem 0 0; color: var(--theme-muted); font-size: .7rem; }
 .order-action--cancel { width:100%; border:1px solid color-mix(in srgb,var(--theme-danger,#b42318) 42%,var(--col-border)); background:color-mix(in srgb,var(--theme-danger,#b42318) 9%,var(--theme-surface)); color:color-mix(in srgb,var(--theme-danger,#b42318) 78%,var(--theme-text)); transition: background .15s, border-color .15s, transform .1s; }
 .order-action--cancel.is-armed { background: color-mix(in srgb, var(--theme-danger, #b42318) 82%, #000) !important; color:#fff !important; border-color: var(--theme-danger, #b42318) !important; animation: order-cancel-pulse 1s ease-in-out infinite; }
@@ -97,8 +97,8 @@
 /* Botón mini de cancelar — apenas visible, discreto */
 .order-cancel-mini {
   width: 100%;
-  min-height: 42px;
-  padding: .5rem .8rem;
+  min-height: 44px;
+  padding: .55rem .8rem;
   margin-top: .3rem;
   border: 1px solid color-mix(in srgb, var(--theme-danger, #b42318) 30%, var(--col-border, #ddd));
   border-radius: .55rem;
@@ -221,4 +221,19 @@ body.ox-body-public :is(.order-item-details small, .order-route-note) { display:
 body.ox-body-public .order-route-note { margin-top: .35rem; line-height: 1.5; font-weight: 400; }
 @media (max-width: 380px) {
   body.ox-body-public .order-confirmation .order-amount { font-size: .8125rem; }
+}
+
+/* v29: Progress bar legible en móvil muy chico — oculta "Listo"
+   intermedio y queda Recibido → Preparación → En camino. Mantiene
+   la trazabilidad sin saturar la pantalla. */
+@media (max-width: 380px) {
+  .order-progress {
+    grid-template-columns: minmax(0,1fr) 10px minmax(0,1fr) 10px minmax(0,1fr) !important;
+    padding: .65rem !important;
+    gap: 0 !important;
+  }
+  .order-progress > div:nth-child(5),
+  .order-progress > i:nth-child(6) { display: none !important; }
+  .order-progress strong { font-size: .72rem; }
+  .order-progress small { font-size: .62rem; white-space: normal; line-height: 1.2; }
 }

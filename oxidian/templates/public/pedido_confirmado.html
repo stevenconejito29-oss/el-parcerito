@@ -121,7 +121,14 @@
       </div>
       {% if pedido.descuento and pedido.descuento > 0 %}
       <div class="flex justify-between" style="color:var(--theme-success)">
-        <span>Descuento</span><span>-€{{ "%.2f"|format(pedido.descuento) }}</span>
+        <span>Descuento{% if pedido.cupon and pedido.cupon.codigo %} <small style="color:var(--col-muted);font-weight:600">({{ pedido.cupon.codigo }})</small>{% endif %}</span>
+        <span>-€{{ "%.2f"|format(pedido.descuento) }}</span>
+      </div>
+      {% endif %}
+      {% if pedido.afiliado_codigo_id and pedido.afiliado_codigo_rel %}
+      <div class="flex justify-between" style="color:var(--theme-success);font-size:.82rem">
+        <span>🤝 Referido <small style="color:var(--col-muted);font-weight:600">({{ pedido.afiliado_codigo_rel.codigo }})</small></span>
+        <span>aplicado</span>
       </div>
       {% endif %}
       {% if presentation.requires_delivery and pedido.zona_id and pedido.costo_envio_aplicado > 0 %}
@@ -129,7 +136,20 @@
         <span>Envío{% if pedido.zona_nombre_aplicada %} ({{ pedido.zona_nombre_aplicada }}){% endif %}</span><span>€{{ "%.2f"|format(pedido.costo_envio_aplicado) }}</span>
       </div>
       {% elif presentation.requires_delivery and pedido.zona_id and pedido.zona_precio_envio_snapshot and pedido.zona_precio_envio_snapshot > 0 %}
-      <div class="flex justify-between" style="color:var(--theme-success)"><span>Envío</span><span>Gratis</span></div>
+      {# Envío gratis con motivo explícito — el cliente entiende por qué y
+         puede confiar que no es un error. Prioridad: cupón envío_gratis >
+         umbral gratis_desde. #}
+      {% set _motivo = '' %}
+      {% set _gratis_desde = pedido.zona.gratis_desde if pedido.zona and pedido.zona.gratis_desde else None %}
+      {% if pedido.cupon and (pedido.cupon.tipo or '')|lower == 'envio_gratis' %}
+        {% set _motivo = 'por cupón ' ~ pedido.cupon.codigo %}
+      {% elif _gratis_desde and pedido.subtotal and pedido.subtotal|float >= _gratis_desde|float %}
+        {% set _motivo = 'por gasto ≥ €' ~ "%.0f"|format(_gratis_desde) %}
+      {% endif %}
+      <div class="flex justify-between" style="color:var(--theme-success)">
+        <span>Envío <small style="color:var(--col-muted);font-weight:600">{% if _motivo %}{{ _motivo }}{% else %}promoción{% endif %}</small></span>
+        <span>Gratis</span>
+      </div>
       {% endif %}
       <div class="flex justify-between font-black text-base pt-1" style="border-top:1px solid var(--col-border);color:var(--col-text)">
         <span>Total</span><span class="order-amount">€{{ "%.2f"|format(pedido.total) }}</span>
@@ -147,7 +167,12 @@
   <div class="ox-card p-4 mb-4 order-points-used">
     <span class="text-3xl">{{ loyalty_icon() }}</span>
     <div>
-      <p class="font-black">{{ pedido.puntos_usados }} {{ ui.loyalty_unit_plural }} utilizados</p>
+      <p class="font-black">
+        {{ pedido.puntos_usados }} {{ ui.loyalty_unit_plural }} utilizados
+        {%- if not puntos.producto and pedido.descuento and pedido.descuento > 0 %}
+        <small style="color:var(--col-muted);font-weight:600">· €{{ "%.2f"|format(pedido.descuento) }} descontado</small>
+        {%- endif -%}
+      </p>
       <p class="text-xs">
         {% if puntos.producto %}
           El producto de canje está incluido y marcado para el equipo.

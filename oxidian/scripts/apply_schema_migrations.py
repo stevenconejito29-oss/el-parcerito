@@ -50,6 +50,7 @@ from models import (
     FavorEvent,
     AiAdvisorConversation,
     AiAdvisorMessage,
+    WeeklyClosure,
 )
 
 
@@ -2361,6 +2362,11 @@ MIGRATIONS = [
         "id": "20260929_02_order_proxima_parada",
         "description": "Añade Order.proxima_parada_avisada_at (idempotencia del aviso 'tu pedido va después')",
         "fn": _migrate_order_proxima_parada,
+    },
+    {
+        "id": "20261001_01_weekly_closures",
+        "description": "Snapshot de corte semanal de finanzas (append-only, no modifica Caja)",
+        "tables": [WeeklyClosure.__table__],
     },
 ]
 

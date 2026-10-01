@@ -1352,6 +1352,101 @@ def finanzas():
     )
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# CORTE SEMANAL DE FINANZAS
+# ═══════════════════════════════════════════════════════════════════════
+
+@admin_bp.route("/finanzas/semanal")
+@admin_required
+def finanzas_semanal():
+    """Vista de cierres semanales + semana actual en vivo.
+
+    - Muestra agregados calculados AHORA para la semana en curso (preview).
+    - Lista cierres anteriores con sus snapshots congelados.
+    - Permite cerrar la semana actual con un POST a /finanzas/cerrar-semana.
+    """
+    from datetime import date as _date
+    from services import get_iso_week_bounds, calcular_agregados_semana
+    from models import WeeklyClosure as _WC
+
+    hoy = _date.today()
+    week_start, week_end = get_iso_week_bounds(hoy)
+    actual = calcular_agregados_semana(week_start, week_end)
+    cierre_actual = _WC.query.filter_by(
+        week_start=week_start, week_end=week_end
+    ).first()
+    historico = _WC.query.order_by(_WC.week_start.desc()).limit(26).all()
+    return render_template(
+        "admin/finanzas_semanal.html",
+        week_start=week_start, week_end=week_end,
+        actual=actual, cierre_actual=cierre_actual,
+        historico=historico,
+    )
+
+
+@admin_bp.route("/finanzas/cerrar-semana", methods=["POST"])
+@admin_required
+def cerrar_semana():
+    """Crea un snapshot congelado de la semana ISO que contiene `fecha_ref`.
+
+    Idempotente vía UNIQUE(week_start, week_end): si ya se cerró esa
+    semana, devuelve warning sin romper.
+    """
+    from datetime import date as _date
+    from services import get_iso_week_bounds, calcular_agregados_semana
+    from models import WeeklyClosure as _WC
+
+    fecha_ref_raw = (request.form.get("fecha_referencia") or "").strip()
+    try:
+        fecha_ref = _date.fromisoformat(fecha_ref_raw) if fecha_ref_raw else _date.today()
+    except ValueError:
+        flash("Fecha de referencia inválida.", "danger")
+        return redirect(url_for("admin.finanzas_semanal"))
+
+    week_start, week_end = get_iso_week_bounds(fecha_ref)
+    if _WC.query.filter_by(week_start=week_start, week_end=week_end).first():
+        flash(f"La semana {week_start.strftime('%d/%m')} – {week_end.strftime('%d/%m')} ya está cerrada.", "warning")
+        return redirect(url_for("admin.finanzas_semanal"))
+
+    agregados = calcular_agregados_semana(week_start, week_end)
+    cierre = _WC(
+        week_start=week_start,
+        week_end=week_end,
+        ingresos_total=agregados["ingresos_total"],
+        ingresos_efectivo=agregados["ingresos_efectivo"],
+        ingresos_bizum=agregados["ingresos_bizum"],
+        ingresos_tarjeta=agregados["ingresos_tarjeta"],
+        inversion_compras=agregados["inversion_compras"],
+        egresos_nominas=agregados["egresos_nominas"],
+        egresos_liquidaciones=agregados["egresos_liquidaciones"],
+        egresos_gastos_operativos=agregados["egresos_gastos_operativos"],
+        egresos_devoluciones=agregados["egresos_devoluciones"],
+        egresos_total=agregados["egresos_total"],
+        saldo_neto=agregados["saldo_neto"],
+        ganancia_operativa=agregados["ganancia_operativa"],
+        cerrado_por=current_user.id,
+        notas=(request.form.get("notas") or "").strip()[:1000] or None,
+    )
+    db.session.add(cierre)
+    AuditLog.registrar(
+        current_user.id, "cerrar_semana", "weekly_closure",
+        detalle=f"semana {week_start.isoformat()}→{week_end.isoformat()} · "
+                f"ganancia_op=€{agregados['ganancia_operativa']}",
+        ip=request.remote_addr,
+    )
+    try:
+        db.session.commit()
+        flash(
+            f"✅ Semana cerrada ({week_start.strftime('%d/%m')}–{week_end.strftime('%d/%m')}). "
+            f"Ganancia operativa: €{float(agregados['ganancia_operativa']):.2f}",
+            "success",
+        )
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"No se pudo cerrar la semana: {exc}", "danger")
+    return redirect(url_for("admin.finanzas_semanal"))
+
+
 def _proyeccion_rentabilidad_stock():
     """Calcula la proyección de rentabilidad futura del stock actual.
 
