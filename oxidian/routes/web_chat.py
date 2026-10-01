@@ -123,6 +123,14 @@ def send_message():
         franjas = delivery_slots_preview()
         if franjas:
             payload["franjas_preview"] = franjas
+    # Si el cliente pidió explícitamente cancelar, ofrecer el botón solo en
+    # ese momento (no en la lista de pedidos). Reduce cancelaciones por tap
+    # accidental y obliga a una intención explícita.
+    if source == "intent:cancel":
+        from web_chat_service import cancel_offer_for_visitor
+        offer = cancel_offer_for_visitor()
+        if offer:
+            payload["cancel_offer"] = offer
     return jsonify(payload)
 
 

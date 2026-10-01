@@ -10,6 +10,7 @@
   const orders = document.getElementById('wcp-orders');
   const reorder = document.getElementById('wcp-reorder');
   const franjasEl = document.getElementById('wcp-franjas');
+  const cancelOfferEl = document.getElementById('wcp-cancel-offer');
   const quick = [...document.querySelectorAll('[data-wcp-quick]')];
   if (!log || !form || !input) return;
   const csrf = document.querySelector('meta[name="ox-csrf-token"]')?.content || '';
@@ -108,6 +109,57 @@
       franjasEl.append(dayBlock);
     });
   }
+  function hideCancelOffer() {
+    if (!cancelOfferEl) return;
+    cancelOfferEl.replaceChildren();
+    cancelOfferEl.hidden = true;
+  }
+  function renderCancelOffer(offer) {
+    if (!cancelOfferEl || !offer) return;
+    cancelOfferEl.replaceChildren();
+    cancelOfferEl.hidden = false;
+    const card = document.createElement('div'); card.className = 'wcp-cancel-card';
+    const title = document.createElement('p'); title.className = 'wcp-cancel-title';
+    title.textContent = offer.order_id
+      ? `Cancelar pedido ${offer.number}`
+      : `No se puede cancelar ${offer.number}`;
+    card.append(title);
+    const body = document.createElement('p'); body.className = 'wcp-cancel-body';
+    body.textContent = offer.mensaje || '';
+    card.append(body);
+    if (offer.order_id) {
+      const confirm = document.createElement('button');
+      confirm.type = 'button'; confirm.className = 'wcp-cancel-confirm';
+      confirm.textContent = '⚠️ Sí, cancelar el pedido';
+      confirm.dataset.orderId = String(offer.order_id);
+      confirm.dataset.orderNumber = offer.number || '';
+      confirm.addEventListener('click', () =>
+        requireSecondTap(
+          confirm,
+          `Toca otra vez para confirmar cancelación de ${offer.number}`,
+          async () => {
+            confirm.disabled = true;
+            confirm.textContent = 'Cancelando…';
+            try {
+              render(await call(`/orders/${offer.order_id}/cancel`, {confirm: true}));
+              hideCancelOffer();
+            } catch (error) {
+              status.textContent = error.message || 'No se pudo cancelar.';
+              confirm.disabled = false;
+              confirm.textContent = '⚠️ Sí, cancelar el pedido';
+            }
+          }
+        )
+      );
+      card.append(confirm);
+      const dismiss = document.createElement('button');
+      dismiss.type = 'button'; dismiss.className = 'wcp-cancel-dismiss';
+      dismiss.textContent = 'No, mantener pedido';
+      card.append(dismiss);
+      dismiss.addEventListener('click', hideCancelOffer);
+    }
+    cancelOfferEl.append(card);
+  }
   function renderOrders(rows = []) {
     if (!orders) return;
     const signature = JSON.stringify(rows);
@@ -192,6 +244,7 @@
     }
     if (data.orders) renderOrders(data.orders);
     if (data.franjas_preview) renderFranjas(data.franjas_preview);
+    if (data.cancel_offer) renderCancelOffer(data.cancel_offer); else hideCancelOffer();
     if (Object.prototype.hasOwnProperty.call(data, 'reorder')) renderReorder(data.reorder);
     const state = data.conversation?.status || 'bot';
     const recognised = data.conversation?.customer_recognised;

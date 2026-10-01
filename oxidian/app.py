@@ -602,7 +602,7 @@ def create_app(env="default"):
         import time
         return {
             "asset_version": app.config.get("ASSET_VERSION", ""),
-            "ui_build": "2026-10-01-v30 · cancel-lock-franja-60min · chat-franjas-visuales",
+            "ui_build": "2026-10-01-v31 · chat-franjas-resp-360 · cancel-on-demand",
             "server_time": time.strftime("%Y-%m-%d %H:%M:%S %Z"),
             "note": "Si esta fecha es reciente pero la app se ve vieja, es cache del navegador. Purga y recarga.",
         }, 200

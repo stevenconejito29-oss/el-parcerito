@@ -161,14 +161,102 @@ body.ox-keyboard-open :is(.wcp-head,.wcp-help,.wcp-orders,.wcp-reorder,.wcp-hand
   color: var(--theme-danger, #b02020);
 }
 
-/* Móvil: slots más estrechos para que quepan 2 por fila sin colapsar */
-@media (max-width: 400px) {
-  .wcp-franja-slots { grid-template-columns: repeat(2, 1fr); gap: .3rem; }
-  .wcp-franja-slot { min-height: 46px; padding: .35rem .3rem; }
+/* Contenedor max-width + overflow protegido para no desbordar la columna */
+.wcp-franjas { max-width: 100%; min-width: 0; overflow-x: hidden; box-sizing: border-box; }
+.wcp-franja-day { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.wcp-franja-slot { min-width: 0; box-sizing: border-box; overflow: hidden; }
+.wcp-franja-slot b { max-width: 100%; }
+
+/* Móvil mediano: 2 cols en grid */
+@media (max-width: 480px) {
+  .wcp-franjas { padding: .55rem; gap: .45rem; }
+  .wcp-franja-day { padding: .45rem .5rem; }
+  .wcp-franjas-title { font-size: .82rem; }
+  .wcp-franjas-sub { font-size: .64rem; }
+  .wcp-franja-slots { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .3rem; }
+  .wcp-franja-slot { min-height: 46px; padding: .35rem .3rem; font-size: .76rem; }
   .wcp-franja-slot b { font-size: .78rem; }
   .wcp-franja-slot em { font-size: .58rem; }
-  .wcp-franjas { padding: .55rem .55rem; }
+}
+
+/* Móvil pequeño: aún más compacto */
+@media (max-width: 360px) {
+  .wcp-franjas { padding: .4rem .35rem; gap: .35rem; }
+  .wcp-franja-day { padding: .35rem; gap: .25rem; }
+  .wcp-franja-day-head strong { font-size: .78rem; }
+  .wcp-franja-day-head small { font-size: .62rem; }
+  .wcp-franja-slots { gap: .25rem; }
+  .wcp-franja-slot { min-height: 42px; padding: .28rem .22rem; }
+  .wcp-franja-slot b { font-size: .72rem; letter-spacing: -.02em; }
+  .wcp-franja-slot em { font-size: .54rem; line-height: 1.15; }
 }
 
 /* Oculta en modo teclado abierto, mismo tratamiento que wcp-orders */
 body.ox-keyboard-open .wcp-franjas { display: none !important; }
+
+/* ══════════════════════════════════════════════════════════════════
+   Oferta explícita de cancelación (v31) — solo cuando cliente lo pide
+   ══════════════════════════════════════════════════════════════════ */
+.wcp-cancel-offer {
+  padding: .75rem;
+  border-top: 1px solid var(--col-border);
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--theme-danger, #b02020) 8%, var(--theme-surface, #fff)),
+    var(--theme-surface, #fff) 60%);
+}
+.wcp-cancel-offer[hidden] { display: none; }
+.wcp-cancel-card {
+  padding: .75rem .85rem;
+  border: 1.5px solid color-mix(in srgb, var(--theme-danger, #b02020) 42%, transparent);
+  border-radius: 12px;
+  background: var(--theme-surface, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+}
+.wcp-cancel-title {
+  margin: 0;
+  font-size: .9rem;
+  font-weight: 900;
+  color: color-mix(in srgb, var(--theme-danger, #b02020) 80%, var(--theme-text));
+}
+.wcp-cancel-body {
+  margin: 0;
+  font-size: .78rem;
+  line-height: 1.45;
+  color: var(--theme-text);
+}
+.wcp-cancel-confirm,
+.wcp-cancel-dismiss {
+  min-height: 44px;
+  padding: .55rem .9rem;
+  border-radius: 10px;
+  font-size: .85rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background .14s, border-color .14s, transform .1s;
+}
+.wcp-cancel-confirm {
+  background: var(--theme-danger, #b02020);
+  border: 1.5px solid var(--theme-danger, #b02020);
+  color: #fff;
+}
+.wcp-cancel-confirm:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--theme-danger, #b02020) 85%, #000);
+}
+.wcp-cancel-confirm:disabled { opacity: .72; cursor: wait; }
+.wcp-cancel-dismiss {
+  background: transparent;
+  border: 1.5px solid var(--col-border);
+  color: var(--theme-text);
+}
+.wcp-cancel-dismiss:hover { background: var(--col-elevated); }
+
+@media (max-width: 400px) {
+  .wcp-cancel-offer { padding: .55rem; }
+  .wcp-cancel-card { padding: .6rem .65rem; }
+  .wcp-cancel-title { font-size: .85rem; }
+  .wcp-cancel-body { font-size: .74rem; }
+}
+
+body.ox-keyboard-open .wcp-cancel-offer { display: none !important; }

@@ -35,6 +35,9 @@
     {# Widget visual de franjas: aparece solo cuando el bot responde sobre
        delivery_schedule y el modo franjas está activo. #}
     <div class="wcp-franjas" id="wcp-franjas" aria-label="Franjas de reparto disponibles" hidden></div>
+    {# Oferta explícita de cancelación: aparece SOLO cuando el cliente
+       escribe "cancelar" y el bot detecta un pedido elegible. #}
+    <div class="wcp-cancel-offer" id="wcp-cancel-offer" aria-label="Confirmar cancelación" hidden></div>
     <div class="wcp-handoff" id="wcp-handoff" hidden>
       <p id="wcp-handoff-copy">¿Quieres que una persona del equipo continúe este chat?</p>
       <button type="button" id="wcp-agent">Sí, solicitar ayuda</button>

@@ -316,13 +316,56 @@ def visitor_orders() -> list[dict]:
             "tracking_url": url_for(
                 "public.pedido_confirmado", pedido_id=order.id,
             ),
-            "cancelable": (
-                order.estado == "pendiente"
-                and not order.pago_confirmado
-                and _bloqueo_cancelacion_franja(order) is None
-            ),
+            # Nunca exponer `cancelable=True` por defecto en la lista de
+            # pedidos: el botón "Cancelar" aparece solo cuando el cliente
+            # escribe explícitamente "cancelar" y el bot ofrece la acción
+            # (ver cancel_offer_for_visitor). Esto evita cancelaciones
+            # accidentales por tap rápido en la card del pedido.
+            "cancelable": False,
         })
     return result
+
+
+def cancel_offer_for_visitor() -> dict | None:
+    """Devuelve el pedido que el bot debe ofrecer cancelar, o None.
+
+    Se dispara desde el intent `cancel` del chat web. Reglas:
+    - Si hay 1 pedido pendiente sin pago confirmado + fuera de la ventana
+      de bloqueo de franja → devuelve {order_id, number, mensaje}.
+    - Si hay varios, elige el más reciente.
+    - Si no hay candidatos o el bloqueo de franja aplica → None (el bot
+      responde con texto explicando por qué, sin botón).
+    """
+    tokens = _visitor_order_tokens()
+    ids = list(tokens)
+    if not ids:
+        return None
+    candidatos = Order.query.filter(
+        Order.id.in_(ids),
+        Order.estado == "pendiente",
+        Order.pago_confirmado.is_(False),
+    ).order_by(Order.creado_en.desc()).all()
+    for order in candidatos:
+        if _bloqueo_cancelacion_franja(order) is None:
+            return {
+                "order_id": order.id,
+                "number": order.numero_pedido,
+                "mensaje": (
+                    f"Si estás seguro de cancelar el pedido {order.numero_pedido} "
+                    "pulsa el botón de abajo. Esta acción no se puede deshacer."
+                ),
+            }
+    # Hay pedidos pendientes pero todos bloqueados por franja — devolver un
+    # dict especial sin order_id para que el bot explique el bloqueo exacto.
+    if candidatos:
+        return {
+            "order_id": None,
+            "number": candidatos[0].numero_pedido,
+            "mensaje": _bloqueo_cancelacion_franja(candidatos[0]) or (
+                "No se puede cancelar ahora. Escribí a una persona del equipo."
+            ),
+        }
+    return None
 
 
 def delivery_slots_preview(max_days: int = 7, max_slots_per_day: int = 6) -> list[dict] | None:
