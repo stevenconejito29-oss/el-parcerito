@@ -116,6 +116,13 @@ def send_message():
             return jsonify({"ok": False, "error": "No se pudo guardar el mensaje. Inténtalo de nuevo."}), 503
     payload = _payload(conversation_for_visitor())
     payload["offer_human"] = bool(conversation.status == "bot" and source == "intent:human")
+    # Si la IA respondió sobre franjas de reparto, incluir el widget visual
+    # de franjas de la semana para que el cliente las vea sin salir del chat.
+    if source == "intent:delivery_schedule":
+        from web_chat_service import delivery_slots_preview
+        franjas = delivery_slots_preview()
+        if franjas:
+            payload["franjas_preview"] = franjas
     return jsonify(payload)
 
 

@@ -57,3 +57,118 @@ body.ox-keyboard-open:has(.wcp-page)>main { position:fixed; inset:var(--keyboard
 body.ox-keyboard-open .wcp-page { grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); }
 body.ox-keyboard-open :is(.wcp-head,.wcp-help,.wcp-orders,.wcp-reorder,.wcp-handoff,.ox-bottom-nav) { display:none !important; }
 @media(orientation:landscape) and (max-height:560px) { body .wcp-page { grid-template-columns:150px minmax(0,1fr); grid-template-rows:minmax(0,1fr); } }
+
+/* ══════════════════════════════════════════════════════════════════
+   Widget visual de franjas en el chat web (v30)
+   Aparece cuando el intent es delivery_schedule y modo franjas ON.
+   ══════════════════════════════════════════════════════════════════ */
+.wcp-franjas {
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+  padding: .75rem .8rem;
+  border-top: 1px solid var(--col-border);
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--brand-primary, #FFAB00) 8%, var(--theme-surface, #fff)),
+    var(--theme-surface, #fff) 55%);
+}
+.wcp-franjas[hidden] { display: none; }
+.wcp-franjas-title {
+  margin: 0;
+  font-size: .9rem;
+  font-weight: 900;
+  color: var(--theme-text);
+  line-height: 1.25;
+}
+.wcp-franjas-sub {
+  display: block;
+  font-size: .7rem;
+  color: var(--theme-muted);
+  line-height: 1.4;
+  margin-top: -.3rem;
+}
+
+.wcp-franja-day {
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+  padding: .55rem;
+  border: 1px solid color-mix(in srgb, var(--brand-primary, #FFAB00) 25%, var(--col-border));
+  border-radius: 10px;
+  background: var(--theme-surface, #fff);
+}
+.wcp-franja-day-head {
+  display: flex;
+  align-items: baseline;
+  gap: .4rem;
+}
+.wcp-franja-day-head strong {
+  font-size: .85rem;
+  font-weight: 900;
+  color: color-mix(in srgb, var(--brand-primary, #FFAB00) 75%, var(--theme-text));
+}
+.wcp-franja-day-head small {
+  font-size: .68rem;
+  color: var(--theme-muted);
+}
+
+.wcp-franja-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr));
+  gap: .35rem;
+}
+.wcp-franja-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  justify-content: center;
+  min-height: 50px;
+  padding: .45rem .5rem;
+  border: 1.5px solid var(--col-border, #e0e0e0);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--theme-surface, #fff) 92%, transparent);
+  text-align: center;
+  font-size: .82rem;
+  font-weight: 800;
+  color: var(--theme-text);
+}
+.wcp-franja-slot b {
+  font-size: .88rem;
+  font-weight: 900;
+  letter-spacing: -.01em;
+}
+.wcp-franja-slot em {
+  font-style: normal;
+  font-size: .62rem;
+  font-weight: 700;
+  color: var(--theme-muted);
+  line-height: 1.2;
+}
+.wcp-franja-slot.is-suggested {
+  background: color-mix(in srgb, var(--brand-primary, #FFAB00) 18%, var(--theme-surface, #fff));
+  border-color: color-mix(in srgb, var(--brand-primary, #FFAB00) 55%, transparent);
+}
+.wcp-franja-slot.is-suggested em {
+  color: color-mix(in srgb, var(--brand-primary, #FFAB00) 80%, var(--theme-text));
+}
+.wcp-franja-slot.is-full {
+  opacity: .5;
+  background: color-mix(in srgb, var(--theme-text, #241500) 6%, var(--theme-surface, #fff));
+  border-color: color-mix(in srgb, var(--theme-text, #241500) 15%, transparent);
+}
+.wcp-franja-slot.is-full em {
+  color: var(--theme-danger, #b02020);
+}
+
+/* Móvil: slots más estrechos para que quepan 2 por fila sin colapsar */
+@media (max-width: 400px) {
+  .wcp-franja-slots { grid-template-columns: repeat(2, 1fr); gap: .3rem; }
+  .wcp-franja-slot { min-height: 46px; padding: .35rem .3rem; }
+  .wcp-franja-slot b { font-size: .78rem; }
+  .wcp-franja-slot em { font-size: .58rem; }
+  .wcp-franjas { padding: .55rem .55rem; }
+}
+
+/* Oculta en modo teclado abierto, mismo tratamiento que wcp-orders */
+body.ox-keyboard-open .wcp-franjas { display: none !important; }

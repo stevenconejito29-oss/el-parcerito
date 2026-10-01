@@ -316,9 +316,89 @@ def visitor_orders() -> list[dict]:
             "tracking_url": url_for(
                 "public.pedido_confirmado", pedido_id=order.id,
             ),
-            "cancelable": order.estado == "pendiente" and not order.pago_confirmado,
+            "cancelable": (
+                order.estado == "pendiente"
+                and not order.pago_confirmado
+                and _bloqueo_cancelacion_franja(order) is None
+            ),
         })
     return result
+
+
+def delivery_slots_preview(max_days: int = 7, max_slots_per_day: int = 6) -> list[dict] | None:
+    """Devuelve próximas franjas de reparto agrupadas por día para renderizar
+    en el chat web como cards visuales.
+
+    Returns:
+        None si el módulo franjas no está activo o no hay franjas.
+        Lista de dicts: ``[{fecha_iso, dia_label, slots: [{id, hora_ini,
+        hora_fin, disponible, cupo_libre, sugerida}]}, ...]``
+
+    Sin PII. Reutiliza ``delivery_slots_service.listar_franjas_admin`` que ya
+    filtra correctamente por disponibilidad.
+    """
+    try:
+        from delivery_mode_service import modos_delivery_activos
+        if not modos_delivery_activos().get("franjas"):
+            return None
+    except Exception:
+        return None
+    try:
+        from delivery_slots_service import listar_franjas_admin
+        from business_time import business_today
+        from datetime import timedelta as _td
+        hoy = business_today()
+        slots = [s for s in listar_franjas_admin(hoy, hoy + _td(days=max_days - 1))
+                 if s.activo]
+        if not slots:
+            return None
+        dias_labels = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+        from collections import defaultdict as _dd
+        agrupado: dict = _dd(list)
+        for s in slots:
+            agrupado[s.fecha].append(s)
+        # Marcar la primera franja disponible como sugerida (igual que checkout)
+        sugerida_id = None
+        for s in sorted(slots, key=lambda x: (x.fecha, x.hora_inicio)):
+            cupo = max(0, (s.capacidad_max or 0) - (s.pedidos.count() if s.pedidos else 0))
+            if cupo > 0:
+                sugerida_id = s.id
+                break
+        resultado = []
+        for fecha in sorted(agrupado.keys()):
+            dia_slots = agrupado[fecha]
+            dia_slots.sort(key=lambda x: x.hora_inicio)
+            es_hoy = fecha == hoy
+            es_manana = fecha == hoy + _td(days=1)
+            if es_hoy:
+                dia_label = "Hoy"
+            elif es_manana:
+                dia_label = "Mañana"
+            else:
+                dia_label = f"{dias_labels[fecha.weekday()]} {fecha.day}"
+            resultado.append({
+                "fecha_iso": fecha.isoformat(),
+                "dia_label": dia_label,
+                "fecha_display": fecha.strftime("%d/%m"),
+                "slots": [
+                    {
+                        "id": s.id,
+                        "hora_ini": s.hora_inicio.strftime("%H:%M"),
+                        "hora_fin": s.hora_fin.strftime("%H:%M"),
+                        "cupo_libre": max(0, (s.capacidad_max or 0) -
+                                          (s.pedidos.count() if s.pedidos else 0)),
+                        "disponible": max(0, (s.capacidad_max or 0) -
+                                           (s.pedidos.count() if s.pedidos else 0)) > 0,
+                        "sugerida": s.id == sugerida_id,
+                    }
+                    for s in dia_slots[:max_slots_per_day]
+                ],
+            })
+        return resultado
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("delivery_slots_preview falló")
+        return None
 
 
 def last_reorderable_order() -> dict | None:
@@ -334,6 +414,43 @@ def last_reorderable_order() -> dict | None:
     return {"id": order.id, "label": "Volver a pedir mi última compra"}
 
 
+def _bloqueo_cancelacion_franja(order) -> str | None:
+    """Devuelve mensaje si la cancelación debe rechazarse por proximidad a la
+    franja de reparto. None si no aplica (sin franja, lejos del inicio,
+    o no delivery). Umbral configurable vía SiteConfig
+    ``CANCELACION_FRANJA_LOCK_MIN`` (default 60 min)."""
+    from datetime import datetime as _dt, time as _time, timedelta as _td
+    if not getattr(order, "slot_id", None) or not getattr(order, "slot", None):
+        return None
+    from models import SiteConfig as _SC
+    try:
+        lock_min = int(_SC.get("CANCELACION_FRANJA_LOCK_MIN", "60") or 60)
+    except (TypeError, ValueError):
+        lock_min = 60
+    if lock_min <= 0:
+        return None
+    # Inicio de la franja en zona del negocio → UTC naive para comparar con utcnow
+    from business_time import business_timezone
+    tz = business_timezone()
+    inicio_local = _dt.combine(order.slot.fecha, order.slot.hora_inicio, tzinfo=tz)
+    from datetime import timezone as _tz
+    inicio_utc = inicio_local.astimezone(_tz.utc).replace(tzinfo=None)
+    ahora = _dt.utcnow()
+    restante = (inicio_utc - ahora).total_seconds() / 60.0
+    if restante > lock_min:
+        return None
+    if restante < 0:
+        return (
+            "Tu franja de reparto ya empezó. Para ajustar algo escribí ahora al "
+            "equipo por este mismo chat con «hablar con una persona»."
+        )
+    return (
+        f"Faltan {int(restante)} min para tu franja ({order.slot.hora_inicio.strftime('%H:%M')}). "
+        f"No se puede cancelar en los últimos {lock_min} min: "
+        f"escríbenos por el chat si pasó algo urgente."
+    )
+
+
 def cancel_visitor_order(order_id: int) -> tuple[bool, str]:
     """Cancelación transaccional autorizada por la sesión, con bloqueo de fila."""
     allowed = {row["id"]: row for row in visitor_orders()}
@@ -344,6 +461,9 @@ def cancel_visitor_order(order_id: int) -> tuple[bool, str]:
         return False, "Ese pedido ya no admite cancelación automática."
     if order.pago_confirmado:
         return False, "El pago ya fue confirmado; solicita atención humana para revisar la devolución."
+    bloqueo = _bloqueo_cancelacion_franja(order)
+    if bloqueo:
+        return False, bloqueo
     from services import cancelar_pedido_operativo
     cancelar_pedido_operativo(
         order, actor_id=order.cliente_id, canal="chat_web",

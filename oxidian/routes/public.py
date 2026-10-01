@@ -3750,6 +3750,14 @@ def cancelar_pedido_web(pedido_id):
             "warning",
         )
         return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id))
+    # Guard adicional: si el pedido tiene franja asignada y falta ≤N min para
+    # que inicie, bloqueamos cancelación autoservicio. Umbral configurable en
+    # SiteConfig.CANCELACION_FRANJA_LOCK_MIN (default 60).
+    from web_chat_service import _bloqueo_cancelacion_franja
+    _bloqueo = _bloqueo_cancelacion_franja(pedido)
+    if _bloqueo:
+        flash(_bloqueo, "warning")
+        return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id))
     try:
         cancelar_pedido_operativo(
             pedido,

@@ -9,6 +9,7 @@
   const handoff = document.getElementById('wcp-handoff');
   const orders = document.getElementById('wcp-orders');
   const reorder = document.getElementById('wcp-reorder');
+  const franjasEl = document.getElementById('wcp-franjas');
   const quick = [...document.querySelectorAll('[data-wcp-quick]')];
   if (!log || !form || !input) return;
   const csrf = document.querySelector('meta[name="ox-csrf-token"]')?.content || '';
@@ -59,6 +60,53 @@
     });
     requests = task;
     return task;
+  }
+  function renderFranjas(dias = []) {
+    if (!franjasEl) return;
+    franjasEl.replaceChildren();
+    if (!dias.length) { franjasEl.hidden = true; return; }
+    franjasEl.hidden = false;
+    const title = document.createElement('p');
+    title.className = 'wcp-franjas-title';
+    title.textContent = '📅 Franjas disponibles esta semana';
+    franjasEl.append(title);
+    const subtitle = document.createElement('small');
+    subtitle.className = 'wcp-franjas-sub';
+    subtitle.textContent = 'La estrella marca la primera franja con cupo. Reservá en el carrito.';
+    franjasEl.append(subtitle);
+    dias.forEach(dia => {
+      const dayBlock = document.createElement('div');
+      dayBlock.className = 'wcp-franja-day';
+      const dayHead = document.createElement('div');
+      dayHead.className = 'wcp-franja-day-head';
+      const strong = document.createElement('strong'); strong.textContent = dia.dia_label;
+      const small = document.createElement('small'); small.textContent = dia.fecha_display;
+      dayHead.append(strong, small);
+      dayBlock.append(dayHead);
+      const slotRow = document.createElement('div');
+      slotRow.className = 'wcp-franja-slots';
+      (dia.slots || []).forEach(slot => {
+        const chip = document.createElement('span');
+        chip.className = 'wcp-franja-slot' +
+          (slot.disponible ? '' : ' is-full') +
+          (slot.sugerida ? ' is-suggested' : '');
+        const horas = document.createElement('b');
+        horas.textContent = `${slot.hora_ini}–${slot.hora_fin}`;
+        chip.append(horas);
+        const estado = document.createElement('em');
+        if (!slot.disponible) {
+          estado.textContent = 'Completa';
+        } else if (slot.sugerida) {
+          estado.textContent = '⭐ Próxima';
+        } else {
+          estado.textContent = `${slot.cupo_libre} libres`;
+        }
+        chip.append(estado);
+        slotRow.append(chip);
+      });
+      dayBlock.append(slotRow);
+      franjasEl.append(dayBlock);
+    });
   }
   function renderOrders(rows = []) {
     if (!orders) return;
@@ -143,6 +191,7 @@
       history.dataset.initialized = '1';
     }
     if (data.orders) renderOrders(data.orders);
+    if (data.franjas_preview) renderFranjas(data.franjas_preview);
     if (Object.prototype.hasOwnProperty.call(data, 'reorder')) renderReorder(data.reorder);
     const state = data.conversation?.status || 'bot';
     const recognised = data.conversation?.customer_recognised;
