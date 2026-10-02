@@ -622,6 +622,21 @@ def _migrate_order_proxima_parada():
         db.session.execute(text("ALTER TABLE orders ADD COLUMN proxima_parada_avisada_at TIMESTAMP"))
 
 
+def _migrate_product_permite_notas():
+    """Añade Product.permite_notas_cliente — admin oculta el campo
+    '¿Alguna preferencia?' por producto. Default True para preservar el
+    comportamiento histórico."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("products"):
+        return
+    existing = {col["name"] for col in inspector.get_columns("products")}
+    if "permite_notas_cliente" not in existing:
+        db.session.execute(text(
+            "ALTER TABLE products ADD COLUMN permite_notas_cliente BOOLEAN "
+            "NOT NULL DEFAULT TRUE"
+        ))
+
+
 def _migrate_user_last_wa_inbound_at():
     """Añade User.last_wa_inbound_at (ventana Meta de service messages).
 
@@ -2367,6 +2382,11 @@ MIGRATIONS = [
         "id": "20261001_01_weekly_closures",
         "description": "Snapshot de corte semanal de finanzas (append-only, no modifica Caja)",
         "tables": [WeeklyClosure.__table__],
+    },
+    {
+        "id": "20261001_02_product_permite_notas",
+        "description": "Añade Product.permite_notas_cliente — admin oculta '¿Alguna preferencia?' por producto",
+        "fn": _migrate_product_permite_notas,
     },
 ]
 

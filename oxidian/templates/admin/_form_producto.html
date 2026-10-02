@@ -500,6 +500,14 @@
       <input type="checkbox" name="solo_canje" style="accent-color:#C084FC">
       🎁 EXCLUSIVO de canje — sólo se obtiene con puntos, no se vende con dinero
     </label>
+    {# Permite notas del cliente — checkbox default TRUE (comportamiento
+       histórico). Admin lo desmarca para ocultar '¿Alguna preferencia?'
+       en el modal del menú por producto. #}
+    <label class="fp-check-label mt-2" style="border-top:1px dashed var(--col-border);padding-top:.6rem">
+      <input type="checkbox" name="permite_notas_cliente" style="accent-color:#5EF097"
+             {% if producto_actual is not defined or producto_actual.permite_notas_cliente %}checked{% endif %}>
+      📝 Permitir "¿Alguna preferencia?" — el cliente puede escribir notas al añadir este producto al carrito
+    </label>
     <p class="text-xs mt-1" style="color:var(--col-muted)">
       Al marcar "exclusivo de canje", el precio pasa a €0.00 y el producto no aparece
       en el catálogo normal, solo en el club de puntos y en el canje del carrito.

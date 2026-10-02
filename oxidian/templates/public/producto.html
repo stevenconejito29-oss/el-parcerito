@@ -357,7 +357,7 @@
     {% for group in extra_groups %}
     <fieldset class="pd-extra-group {% if group.tipo == 'sabor' %}pd-flavor-group{% endif %}" data-option-type="{{ group.tipo }}" data-min="{{ group.min_selecciones }}" data-max="{{ group.max_selecciones }}">
       <legend>
-        {% if group.tipo == 'sabor' %}🥭 {% endif %}{{ group.nombre }}
+        {% if group.tipo == 'sabor' %}{{ brand.sabores_emoji or '🍬' }} {% endif %}{{ group.nombre }}
         <small>{% if group.tipo == 'sabor' %}{% if group.max_selecciones|int > 1 %}Toca los sabores que quieras · hasta {{ group.max_selecciones }} en total{% else %}{{ 'Obligatorio · elige uno' if group.min_selecciones else 'Opcional · elige uno' }}{% endif %}{% elif group.min_selecciones %}Elige de {{ group.min_selecciones }} a {{ group.max_selecciones }}{% else %}Opcional · máximo {{ group.max_selecciones }}{% endif %}</small>
       </legend>
       {% if group.descripcion %}<p>{{ group.descripcion }}</p>{% endif %}

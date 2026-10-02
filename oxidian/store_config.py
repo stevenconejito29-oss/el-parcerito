@@ -434,6 +434,11 @@ def get_store_profile() -> dict:
         "color_secundario": get_store_value("COLOR_SECUNDARIO"),
         "color_acento": get_store_value("COLOR_ACENTO"),
         "fallback_emoji": get_store_value("BRAND_FALLBACK_EMOJI", "🥟") or "🥟",
+        # Emoji del título "Elige tu sabor" en el modal/detalle de producto.
+        # Configurable para que no todas las tiendas tengan 🥭 (mango) por
+        # defecto; multi-vertical (comida, bebidas, repostería) puede querer
+        # algo distinto.
+        "sabores_emoji": get_store_value("SABORES_EMOJI", "🍬") or "🍬",
         "horario_apertura": get_store_value("HORARIO_APERTURA"),
         "horario_cierre": get_store_value("HORARIO_CIERRE"),
         "horario_semanal_json": get_store_value("HORARIO_SEMANAL_JSON", ""),

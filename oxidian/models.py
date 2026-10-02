@@ -891,6 +891,13 @@ class Product(db.Model):
 
     # ── Hipoalergénicos / alérgenos ──────────────────────────────────
     es_hipoalergenico = db.Column(db.Boolean, default=False)
+    # Controla si el modal "añadir al carrito" muestra el campo
+    # "¿Alguna preferencia?" (notas libres del cliente). Default True
+    # para no cambiar comportamiento histórico; el admin puede ocultarlo
+    # por producto desde /admin/productos/<id>/editar.
+    permite_notas_cliente = db.Column(
+        db.Boolean, nullable=False, default=True, server_default=db.text("true")
+    )
     alergenos_info = db.Column(db.Text)   # legacy — mantener compatibilidad
     alergenos_json = db.Column(db.Text)   # JSON list: ["gluten","lacteos"]
 

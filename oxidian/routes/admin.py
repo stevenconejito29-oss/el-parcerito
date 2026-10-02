@@ -3545,6 +3545,10 @@ def _parsear_campos_producto(form):
     es_hipoalergenico = bool(form.get("es_hipoalergenico"))
     alergenos = [] if es_hipoalergenico else form.getlist("alergenos")
 
+    # Toggle "¿Alguna preferencia?" — default True si el form no lo trae
+    # (compat con payloads antiguos). Admin desmarca para ocultar el campo.
+    permite_notas_cliente = bool(form.get("permite_notas_cliente"))
+
     es_combo = bool(form.get("es_combo"))
     proveedor_despachador_id = None
     requested_partner_id = form.get("proveedor_despachador_id", type=int)
@@ -3633,6 +3637,7 @@ def _parsear_campos_producto(form):
         "es_hipoalergenico":         es_hipoalergenico,
         "alergenos_json":            json.dumps(alergenos) if alergenos else None,
         "alergenos_info":            None,
+        "permite_notas_cliente":     permite_notas_cliente,
     }, None
 
 

@@ -584,8 +584,10 @@
         <input type="hidden" name="origen" id="ep-modal-origin" value="{{ origen_actual }}">
         <input type="hidden" name="cantidad" id="ep-modal-qty-val" value="1">
         <input type="hidden" name="presentation_size" id="ep-modal-pres-val" value="">
-        {# Notas del cliente por producto. #}
-        <div class="ep-modal-notas-wrap">
+        {# Notas del cliente por producto — opcional. JS lo oculta cuando
+           EP_DATA[id].permite_notas === false (admin lo desactivó en la
+           edición del producto). #}
+        <div class="ep-modal-notas-wrap" id="ep-modal-notas-wrap">
           <label for="ep-modal-notas" class="ep-modal-notas-lbl">📝 Alguna preferencia? <span class="ep-modal-notas-hint">(opcional)</span></label>
           <textarea id="ep-modal-notas" name="notas_personalizacion" rows="2" maxlength="240"
                     class="ep-modal-notas-input"
@@ -634,6 +636,7 @@
     "stock_mostrar": {{ 'true' if p.stock_mostrar_en_web else 'false' }},
     "disponible_directo": {{ 'true' if establecimiento.abierto and product_cards[p.id].available and p.tipo_entrega == 'inmediato' and not p.es_combo and not product_cards[p.id].has_extras else 'false' }},
     "es_hipo": {{ 'true' if p.es_hipoalergenico else 'false' }},
+    "permite_notas": {{ 'true' if p.permite_notas_cliente else 'false' }},
     "solo_canje": {{ 'true' if p.solo_canje else 'false' }},
     "canjeable_con_puntos": {{ 'true' if p.canjeable_con_puntos else 'false' }},
     "puntos_para_canje": {{ (p.puntos_para_canje or 0)|int }},
@@ -926,6 +929,17 @@ function openModal(id) {
   const fbEl   = document.getElementById('ep-modal-img-fb');
   const imgWrap = document.getElementById('ep-modal-img-wrap');
   imgWrap?.classList.toggle('is-cover', d.image_fit === 'cover');
+
+  // Notas del cliente: ocultar si el admin lo desactivó para este producto.
+  // Backend ignora el campo si llega vacío, pero si está oculto evitamos
+  // confusión visual y limpiamos el textarea para no mandar notas viejas.
+  const notasWrap = document.getElementById('ep-modal-notas-wrap');
+  const notasInput = document.getElementById('ep-modal-notas');
+  if (notasWrap) {
+    const permite = d.permite_notas !== false;  // default true si no viene
+    notasWrap.hidden = !permite;
+    if (!permite && notasInput) notasInput.value = '';
+  }
 
   // Imagen
   if (d.imagen_url) {
