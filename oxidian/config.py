@@ -17,8 +17,13 @@ def _database_url():
         raise RuntimeError(
             "SQLite ya no está soportado. Oxidian usa una única base PostgreSQL."
         )
-    if not value.startswith(("postgresql://", "postgresql+psycopg://")):
+    if not value.startswith(("postgresql://", "postgresql+psycopg://", "postgresql+psycopg2://")):
         raise RuntimeError("DATABASE_URL debe ser una URI PostgreSQL válida.")
+    # Forzar driver psycopg2 explícito si viene genérico: SQLAlchemy 2.0+
+    # intenta cargar psycopg3 (`import psycopg`) cuando ve 'postgresql://'
+    # sin dialect, y el contenedor sólo trae psycopg2 (requirements.txt).
+    if value.startswith("postgresql://"):
+        value = value.replace("postgresql://", "postgresql+psycopg2://", 1)
     return value
 
 

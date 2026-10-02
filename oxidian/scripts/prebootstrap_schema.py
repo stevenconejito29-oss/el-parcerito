@@ -6,10 +6,21 @@ import os
 from sqlalchemy import create_engine, inspect, text
 
 
+def _force_psycopg2_driver(url: str) -> str:
+    """SQLAlchemy 2.0+ con 'postgresql://' sin dialect puede intentar cargar
+    psycopg3 (`import psycopg`). El contenedor solo tiene psycopg2 (via
+    requirements.txt), así que forzamos el dialect explícito para evitar
+    ModuleNotFoundError durante el prebootstrap."""
+    if url.startswith("postgresql://") and "+" not in url.split("://", 1)[0]:
+        return url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    return url
+
+
 def main():
     database_url = os.environ.get("DATABASE_URL", "").strip()
     if not database_url:
         return
+    database_url = _force_psycopg2_driver(database_url)
     engine = create_engine(database_url)
     inspector = inspect(engine)
     changed = []
