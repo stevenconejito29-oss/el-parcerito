@@ -14,7 +14,7 @@ psycopg2-binary==2.9.10
 pywebpush>=2.0.0
 py-vapid>=1.9.2
 cryptography>=42.0.0
-pyotp>=2.9.0
+pyotp>=2.10.0
 segno>=1.6.1
 weasyprint>=61.1
 python-escpos>=3.1
